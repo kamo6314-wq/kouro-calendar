@@ -1,0 +1,1116 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>行路カレンダー</title>
+<meta name="description" content="行路の予定を、スマホのカレンダーに入れるファイルを作ります">
+<meta name="theme-color" content="#f3f1ed" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#171513" media="(prefers-color-scheme: dark)">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<style>
+/* 道具の作法:暖かい灰の台、白い入れ物(角丸14)、操作(角丸8〜10)、切りかえは丸、黒い主ボタン、細い区切り線。
+   色の意味は1つずつ:緑=行路、赤=休み、橙(黄)=休日変形、焦げ茶(アクセント)=変えた日・直す日。飾りの図形は使わない */
+:root{
+  --chrome:#f3f1ed; --sheet:#ffffff; --ink:#23211e; --mut:#5c5852; --faint:#8a857e;
+  --sep:rgba(58,46,33,.12); --fill:rgba(58,46,33,.07); --sh:58,46,33;
+  --accent:#9a4520; --accent-t:#f4e6de;
+  --kro:#0e8040; --kro-t:#d5ecdf; --kro-tx:#1f3d2b; --kro-ink:#ffffff; --rest:#c8231c; --rest2:#d64a43; --hen:#f0a000;
+  --cell-rest:#f6efd2; --cell-rest-ink:#6f5d12; --sun:#c62d24; --sat:#2d5fc0;
+  --f-body:"Noto Sans JP","Hiragino Sans","Hiragino Kaku Gothic ProN",Meiryo,system-ui,sans-serif;
+  --f-num:"Barlow Condensed","Arial Narrow","Noto Sans JP",sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --chrome:#171513; --sheet:#211f1c; --ink:#efebe5; --mut:#b0aaa2; --faint:#857f77;
+  --sep:rgba(255,245,230,.11); --fill:rgba(255,245,230,.08); --sh:0,0,0;
+  --accent:#ec9a6e; --accent-t:#3a2a20;
+  --kro:#2fbf69; --kro-t:#1d3a29; --kro-tx:#cfe9d9; --kro-ink:#06150c; --rest:#ff5a50; --rest2:#ff7a72; --hen:#ffb52e;
+  --cell-rest:#3a3420; --cell-rest-ink:#f0e2a6; --sun:#ff7a70; --sat:#8db2ff; color-scheme:dark }}
+:root[data-theme="dark"]{
+  --chrome:#171513; --sheet:#211f1c; --ink:#efebe5; --mut:#b0aaa2; --faint:#857f77;
+  --sep:rgba(255,245,230,.11); --fill:rgba(255,245,230,.08); --sh:0,0,0;
+  --accent:#ec9a6e; --accent-t:#3a2a20;
+  --kro:#2fbf69; --kro-t:#1d3a29; --kro-tx:#cfe9d9; --kro-ink:#06150c; --rest:#ff5a50; --rest2:#ff7a72; --hen:#ffb52e;
+  --cell-rest:#3a3420; --cell-rest-ink:#f0e2a6; --sun:#ff7a70; --sat:#8db2ff; color-scheme:dark }
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{margin:0;background:var(--chrome);color:var(--ink);font:400 14px/1.65 var(--f-body);word-break:auto-phrase;line-break:strict;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+button{-webkit-tap-highlight-color:transparent}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+[hidden]{display:none!important}
+.nb{white-space:nowrap}
+.num{font-family:var(--f-num);font-variant-numeric:tabular-nums}
+body.lock{overflow:hidden}
+
+/* 上の帯 */
+.topbar{position:sticky;top:0;z-index:6;background:var(--chrome);border-bottom:1px solid var(--sep);padding:calc(env(safe-area-inset-top,0px) + 8px) 16px 8px}
+.topbar .in{max-width:560px;margin:0 auto;display:flex;align-items:center;gap:10px}
+.ttl{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.3}
+.ttl b{font-size:15px;font-weight:700}
+.ttl small{font-size:12px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tag{display:inline-block;font-size:10.5px;font-weight:700;padding:0 5px;border-radius:4px;background:var(--ink);color:var(--chrome);vertical-align:1px;margin-left:6px}
+.pill{appearance:none;border:0;background:var(--fill);border-radius:999px;padding:0 14px;min-height:44px;font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap}
+
+.wrap{max-width:560px;margin:0 auto;padding:12px 16px 24px;display:flex;flex-direction:column;gap:12px}
+.card{background:var(--sheet);border-radius:14px;box-shadow:0 1px 2px rgba(var(--sh),.08),0 10px 28px rgba(var(--sh),.06);min-width:0}
+.line-note{margin:0;background:var(--accent-t);font-size:13px;padding:10px 12px;border-radius:10px}
+.hint{margin:0;font-size:12px;line-height:1.6;color:var(--mut)}
+
+/* はじめて(データなし) */
+.hello{padding:24px 16px 20px;display:flex;flex-direction:column;gap:14px}
+.hello h1{margin:0;font-size:22px;line-height:1.5;font-weight:700}
+.hello p{margin:0;color:var(--mut);font-size:14px;line-height:1.7}
+.btn{appearance:none;border:0;border-radius:12px;min-height:52px;padding:12px 16px;font-size:15px;font-weight:700;cursor:pointer;width:100%}
+.btn.pri{background:var(--ink);color:var(--sheet)}
+.btn.sec{background:var(--fill)}
+.btn:disabled{background:var(--fill);color:var(--faint);cursor:default}
+.err{margin:0;font-size:13px;color:var(--rest)}
+
+/* なにをする? */
+.choose{display:flex;flex-direction:column;gap:12px;padding:16px 0 4px}
+.choose h1{margin:0;font-size:24px;line-height:1.4}
+.choose>p{margin:0 0 4px;font-size:14px;line-height:1.7;color:var(--mut)}
+.opt{appearance:none;border:0;width:100%;text-align:left;cursor:pointer;display:flex;align-items:center;gap:12px;padding:18px 16px}
+.opt .t{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.opt b{font-size:17px;line-height:1.4}
+.opt span span{font-size:13px;line-height:1.6;color:var(--mut)}
+.chev{flex:none;width:16px;height:16px;color:var(--faint)}
+
+/* 入れ方の切りかえ */
+.seg{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:2px;background:var(--fill);border-radius:10px;padding:3px}
+.seg button{appearance:none;border:0;background:transparent;border-radius:8px;min-height:40px;font-size:13.5px;color:var(--mut);cursor:pointer;padding:0 4px}
+.seg button.on{background:var(--sheet);color:var(--ink);font-weight:700;box-shadow:0 1px 2px rgba(var(--sh),.14),0 2px 6px rgba(var(--sh),.08)}
+
+/* いつから・どの枠 */
+.row{appearance:none;border:0;width:100%;text-align:left;cursor:pointer;display:flex;align-items:center;gap:10px;padding:12px 14px;min-height:56px}
+.row .t{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;line-height:1.45}
+.row small{font-size:12px;color:var(--mut)}
+.row .v{display:flex;align-items:baseline;gap:4px 8px;flex-wrap:wrap;font-size:16px;font-weight:700}
+.row .v .num{font-size:21px}
+.row .act{font-size:13px;font-weight:700;white-space:nowrap}
+.row.empty .v{font-size:15px}
+.chip{font-size:12px;font-weight:700;background:var(--kro);color:var(--kro-ink);border-radius:5px;padding:1px 7px;white-space:nowrap}
+.chip.r{background:var(--rest);color:#fff}
+.chip.a{background:var(--fill);color:var(--mut)}
+.row.set .v{font-size:12.5px;font-weight:400;color:var(--mut);line-height:1.55}
+.row.set b{font-size:14px;flex:none}
+
+/* お知らせ(直す日・まだ入れてない変更) */
+.note{background:var(--accent-t);border-radius:14px;padding:10px;display:flex;flex-direction:column;gap:8px}
+.note .hd{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:0 4px;font-size:13.5px;font-weight:700}
+.note .hd small{font-size:12px;font-weight:400;color:var(--mut)}
+.note ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.note li button{appearance:none;border:0;width:100%;text-align:left;background:var(--sheet);border-radius:10px;padding:10px 12px;min-height:52px;display:flex;align-items:center;gap:10px;cursor:pointer;font-size:12.5px;line-height:1.55}
+.note li b{font-size:14px;flex:none;white-space:nowrap}
+.note li span{flex:1;min-width:0}
+.note li em{font-style:normal;font-size:13px;font-weight:700;color:var(--accent);white-space:nowrap}
+.note .dl{font-size:12.5px;line-height:1.6;padding:0 4px}
+
+/* 勤務発表から読み込む */
+.imp{padding:16px 14px;display:flex;flex-direction:column;gap:14px}
+.imp .hd{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.imp .hd b{font-size:16px}
+.imp .hd label{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--mut);white-space:nowrap}
+.imp select{border:0;background:var(--fill);border-radius:8px;min-height:40px;padding:0 8px;font-weight:700;font-size:14px}
+.st{display:grid;grid-template-columns:24px minmax(0,1fr);gap:10px;align-items:start}
+.st .n{font:700 13px/1 var(--f-num);width:24px;height:24px;border-radius:7px;background:var(--ink);color:var(--sheet);display:grid;place-items:center}
+.st .b{display:flex;flex-direction:column;gap:8px;min-width:0}
+.st p{margin:0;font-size:14px;line-height:1.6}
+.st .hint{margin-top:-4px}
+.lnk{appearance:none;border:0;background:transparent;padding:0;min-height:36px;font-size:12.5px;color:var(--mut);text-decoration:underline;text-underline-offset:3px;cursor:pointer;align-self:flex-start}
+.imp textarea{width:100%;border:0;background:var(--fill);border-radius:8px;padding:10px 12px;font:500 14px/1.55 var(--f-body);resize:vertical;min-height:120px;outline:none;-webkit-appearance:none;appearance:none}
+.imp textarea:focus{box-shadow:inset 0 0 0 2px var(--ink)}
+.imp .err{font-size:12.5px}
+.done-row{appearance:none;border:0;width:100%;text-align:left;cursor:pointer;display:flex;align-items:center;gap:10px;padding:10px 14px;min-height:52px;font-size:13px}
+.done-row b{font-size:14px}
+.done-row span{flex:1;color:var(--mut)}
+
+/* 月のカレンダー */
+.calc{padding:10px 12px;display:flex;flex-direction:column;gap:6px}
+.mnav{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.mnav .c{display:flex;flex-direction:column;align-items:center;line-height:1.3;min-width:0}
+.mnav b{font-size:15px}
+.mnav b .num{font-size:21px}
+.mnav small{font-size:12px;color:var(--mut);white-space:nowrap}
+.mnav small b{font:700 15px/1 var(--f-num);color:var(--ink)}
+.mnav button{appearance:none;border:0;background:var(--fill);border-radius:8px;width:44px;height:40px;cursor:pointer;display:grid;place-items:center;flex:none}
+.mnav button:disabled{opacity:.3;cursor:default}
+.mnav svg{width:16px;height:16px}
+.cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));border-top:1px solid var(--sep)}
+.cal .wh{font-size:11px;color:var(--mut);text-align:center;padding:4px 0}
+.cal .wh.s0{color:var(--sun)} .cal .wh.s6{color:var(--sat)}
+.dd{appearance:none;border:0;border-bottom:1px solid var(--sep);border-radius:0;background:transparent;text-align:left;margin:0;font:inherit;color:inherit;min-height:62px;padding:3px 2px 4px;display:flex;flex-direction:column;gap:2px;min-width:0;cursor:pointer}
+.dd:active{background:var(--fill)}
+.dd.blank,.dd.out{cursor:default}
+.dd.blank{border-bottom-color:transparent}
+.dd .dn{font:600 13px/1.25 var(--f-num);padding-left:3px}
+.dd.s0 .dn,.dd.hol .dn{color:var(--sun)}
+.dd.s6 .dn{color:var(--sat)}
+.dd.out .dn{opacity:.35}
+.dd.first .dn{background:var(--ink);color:var(--sheet);border-radius:5px;padding:0 5px;align-self:flex-start}
+.dd.ch{box-shadow:inset 0 0 0 2px var(--accent);border-radius:6px}
+.ev{border-radius:4px;padding:2px 3px;line-height:1.15;font-size:11.5px;font-weight:700;color:var(--kro-ink);background:var(--kro);overflow:hidden;white-space:nowrap}
+.ev small{display:block;font:600 11px/1.1 var(--f-num)}
+.ev.tom{border-top-right-radius:0;border-bottom-right-radius:0;margin-right:-2px}
+.ev.ake{background:var(--kro-t);color:var(--kro-tx);border-top-left-radius:0;border-bottom-left-radius:0;margin-left:-2px;font-weight:500}
+.ev.lone{background:var(--fill);color:var(--mut);font-weight:500}
+.ev.rest{background:repeating-linear-gradient(135deg,var(--rest) 0 5px,var(--rest2) 5px 9px);color:#fff}
+.ev.rest.off{background:var(--fill);color:var(--faint)}
+.ev.hen{background:var(--hen);color:#2a1d00}
+.ev.fix{background:var(--sheet);box-shadow:inset 0 0 0 2px var(--accent);color:var(--accent)}
+.ev.none{background:var(--fill);color:var(--faint);font-weight:500}
+.ev.skip{background:var(--fill);color:var(--faint)}
+.holm{font-size:9.5px;font-weight:700;line-height:1.25;color:var(--rest);white-space:nowrap;overflow:hidden;letter-spacing:-.03em;padding-left:2px}
+.calf{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding-top:2px}
+.legend{display:flex;flex-wrap:wrap;gap:2px 12px;font-size:11px;color:var(--mut)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+.lnk.sm{min-height:32px;font-size:12px}
+
+/* 下のボタン */
+.dock{position:sticky;bottom:0;z-index:5;background:var(--chrome);border-top:1px solid var(--sep);padding:10px 16px calc(env(safe-area-inset-bottom,0px) + 10px)}
+.dock .in{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:6px}
+.go{appearance:none;border:0;border-radius:12px;min-height:52px;background:var(--ink);color:var(--sheet);font-size:16px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px}
+.go .num{font-size:20px;background:color-mix(in srgb,var(--sheet) 18%,transparent);border-radius:7px;padding:0 8px;line-height:1.35}
+.go:disabled{background:var(--fill);color:var(--faint);cursor:default}
+.go:disabled .num{display:none}
+.go2{appearance:none;border:0;background:transparent;min-height:40px;font-size:13.5px;font-weight:700;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.done{margin:0;font-size:13px;line-height:1.6;background:var(--sheet);border-radius:10px;padding:10px 12px;box-shadow:inset 0 0 0 1px var(--sep)}
+
+/* 下から出る画面 */
+.scrim{position:fixed;inset:0;z-index:20;background:rgba(23,19,15,.42)}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:21;margin:0 auto;max-width:560px;max-height:90vh;max-height:90dvh;background:var(--sheet);border-radius:16px 16px 0 0;box-shadow:0 -10px 34px rgba(0,0,0,.2);display:flex;flex-direction:column;animation:up .2s ease-out}
+.sheet.tall{height:min(700px,90vh);height:min(700px,90dvh)}
+.sheet:focus{outline:none}
+@keyframes up{from{transform:translateY(24px);opacity:.4}to{transform:none;opacity:1}}
+.sh-h{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 14px 10px 16px}
+.sh-h b{font-size:17px}
+.ib{appearance:none;border:0;background:var(--fill);border-radius:8px;width:44px;height:44px;cursor:pointer;display:grid;place-items:center;flex:none;color:var(--ink)}
+.ib:disabled{opacity:.3;cursor:default}
+.ib svg{width:16px;height:16px}
+.sh-b{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:0 16px 16px;position:relative}
+.sh-f{flex:none;border-top:1px solid var(--sep);padding:10px 16px calc(env(safe-area-inset-bottom,0px) + 10px);display:flex;flex-direction:column;gap:8px}
+
+/* 枠を選ぶ */
+.when{display:grid;grid-template-columns:minmax(0,1fr) 112px;gap:8px}
+.fld{position:relative;background:var(--fill);border-radius:10px;padding:7px 12px;min-height:58px;display:flex;flex-direction:column;justify-content:center;cursor:pointer}
+.fld small{font-size:11.5px;color:var(--mut);line-height:1.3}
+.fld .v{font-size:18px;font-weight:700;line-height:1.35;white-space:nowrap}
+.fld .v .num{font-size:24px;margin:0 1px}
+.fld input[type=date]{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer;-webkit-appearance:none;appearance:none}
+.fld input[type=text]{border:0;background:transparent;padding:0;width:100%;font:700 24px/1.35 var(--f-num);outline:none}
+.fld input::placeholder{color:var(--faint);font-weight:500}
+.fld:focus-within{box-shadow:inset 0 0 0 2px var(--ink)}
+.kb-box{border-radius:10px;overflow:hidden;box-shadow:inset 0 0 0 1px var(--sep)}
+.kb{border-collapse:collapse;width:100%;table-layout:fixed;font-variant-numeric:tabular-nums}
+.kb th{font:600 11.5px/1 var(--f-num);color:var(--faint);height:24px;background:var(--fill)}
+.kb th.rh{width:22px}
+.kb tbody th{border-top:1px solid var(--sep)}
+.kb td{border-top:1px solid var(--sep);border-left:1px solid var(--sep);padding:0;height:46px;vertical-align:middle}
+.kb td button{all:unset;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:46px;cursor:pointer;text-align:center;line-height:1;position:relative}
+.kb .n{font:600 19px/1 var(--f-num)}
+.kb .p{font-size:9px;color:var(--mut);margin-top:3px;white-space:nowrap;overflow:hidden;max-width:100%;letter-spacing:-.02em}
+.kb td.rest{background:var(--cell-rest)}
+.kb td.rest button{color:var(--cell-rest-ink);font-size:clamp(9px,2.5vw,10.5px);font-weight:500;letter-spacing:-.03em;line-height:1.25;padding:0 1px}
+.kb td.ake button{color:var(--faint);font-size:13px}
+.kb td.next{background:var(--accent-t)}
+.kb td.next button::after{content:attr(data-i);position:absolute;top:3px;right:4px;font:700 9px/1 var(--f-num);color:var(--accent)}
+.kb td.on{background:var(--ink)}
+.kb td.on button,.kb td.on .p{color:var(--sheet)}
+.kb td.on button::before{content:"この日";position:absolute;top:3px;left:0;right:0;font-size:8.5px;font-weight:700}
+.kb td.on .n{margin-top:6px}
+
+/* 日を押したとき */
+.dh{display:grid;grid-template-columns:44px minmax(0,1fr) 44px 44px;gap:6px;align-items:center;padding:12px 12px 4px}
+.dh b{font-size:18px;text-align:center;white-space:nowrap}
+.dh b .num{font-size:24px;margin:0 1px}
+.dnow{margin:0 16px 10px;text-align:center;font-size:13px;line-height:1.55;color:var(--mut)}
+.dnow .lnk{font-size:12.5px;min-height:32px;margin-left:6px;align-self:auto;vertical-align:baseline}
+.q{position:relative;margin:0 16px 8px}
+.q svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--faint);pointer-events:none}
+.q input{width:100%;border:0;background:var(--fill);border-radius:8px;min-height:44px;padding:8px 12px 8px 36px;font-size:16px;outline:none;-webkit-appearance:none;appearance:none}
+.q input:focus{box-shadow:inset 0 0 0 2px var(--ink)}
+.tabs3{margin:0 16px 10px}
+.cap{margin:14px 0 8px;font-size:12px;font-weight:700;color:var(--mut)}
+.cap:first-child{margin-top:10px}
+.cks{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px}
+.ck{appearance:none;border:0;background:var(--fill);border-radius:8px;min-height:54px;padding:6px 4px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;position:relative;color:var(--ink)}
+.ck b{font:700 19px/1 var(--f-num)}
+.ck b.w{font:700 14px/1.2 var(--f-body)}
+.ck small{font:600 12px/1 var(--f-num);color:var(--mut)}
+.ck small.j{font:500 10.5px/1.2 var(--f-body)}
+.ck.k small{color:var(--sun)}
+.ck.rs{background:var(--cell-rest);color:var(--cell-rest-ink)}
+.ck.base::after{content:"交番";position:absolute;top:3px;right:4px;font-size:8.5px;font-weight:700;color:var(--mut)}
+.ck.on{background:var(--ink);color:var(--sheet)}
+.ck.on small,.ck.on::after{color:var(--sheet)}
+.ck:disabled{opacity:.38;cursor:default}
+.own{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+.own label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mut)}
+.own input[type=text],.own input[type=time]{border:0;background:var(--fill);border-radius:8px;min-height:44px;padding:8px 12px;font-size:16px;font-weight:600;width:100%;-webkit-appearance:none;appearance:none}
+.own .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.tg{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:52px}
+.tg .t{display:flex;flex-direction:column;min-width:0;line-height:1.45;font-size:14px}
+.tg .t small{font-size:12px;color:var(--mut)}
+.sw{position:relative;flex:none;width:50px;height:30px}
+.sw input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer;z-index:1}
+.sw i{position:absolute;inset:0;border-radius:999px;background:var(--fill);box-shadow:inset 0 0 0 1px var(--sep);transition:background .15s}
+.sw i::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .15s}
+.sw input:checked+i{background:var(--ink)}
+.sw input:checked+i::after{transform:translateX(20px)}
+.sw input:focus-visible+i{outline:2px solid var(--accent);outline-offset:2px}
+
+/* 入れ方(設定) */
+.rows{display:flex;flex-direction:column}
+.rows .r{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;min-height:56px;border-top:1px solid var(--sep)}
+.rows .r:first-child{border-top:0}
+.rows .r .t{display:flex;flex-direction:column;min-width:0;line-height:1.45;font-size:14px}
+.rows .r .t small{font-size:12px;color:var(--mut)}
+.rows select,.rows input[type=date]{border:0;background:var(--fill);border-radius:8px;padding:6px 10px;min-height:40px;font-weight:600;font-size:14px;max-width:60%}
+.rows .r.sub{border-top:0;padding-top:0;min-height:0;justify-content:flex-start;flex-wrap:wrap;gap:6px 8px;font-size:13px;padding-left:14px}
+
+/* 直してない日 */
+.wl{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.wl button{appearance:none;border:0;background:var(--accent-t);border-radius:10px;width:100%;text-align:left;padding:10px 12px;min-height:52px;font-size:13px;line-height:1.5;cursor:pointer;display:flex;gap:10px;align-items:center}
+.wl b{font-size:14px;flex:none;white-space:nowrap}
+.wl span{flex:1;min-width:0}
+.wl em{font-style:normal;font-weight:700;color:var(--accent);white-space:nowrap}
+.go-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+
+details.help{padding:0 2px}
+details.help summary{cursor:pointer;font-weight:700;font-size:14px;min-height:44px;display:flex;align-items:center}
+details.help ol,details.help ul{margin:4px 0 0;padding-left:1.3em;font-size:13px;display:flex;flex-direction:column;gap:6px}
+details.help h3{margin:12px 0 0;font-size:13px}
+.foot{font-size:12px;color:var(--mut);margin:0;padding:0 2px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<header class="topbar"><div class="in">
+  <span class="ttl"><b>行路カレンダー</b><small id="dataLine">行路の予定を、スマホのカレンダーへ</small></span>
+  <button class="pill" type="button" id="dataBtn" hidden>行路データ</button>
+</div></header>
+
+<main class="wrap" id="wrap">
+  <p class="line-note" id="lineNote" hidden><span class="nb">LINEの中で</span><span class="nb">開いています。</span><span class="nb">カレンダーに入れるときは、</span><span class="nb">メニューの「ブラウザで開く」</span><span class="nb">（Safari など）で</span><span class="nb">開き直してね。</span></p>
+
+  <section class="card hello" id="hello">
+    <h1><span class="nb">行路の予定を、</span><span class="nb">スマホのカレンダーに</span><span class="nb">一気に入れる。</span></h1>
+    <p><span class="nb">はじめに、</span><span class="nb">行路データ（.json）を選んでね。</span><span class="nb">グループに流れてるファイル。</span><span class="nb">先に「ファイル」アプリに</span><span class="nb">保存しておくと選びやすいよ。</span></p>
+    <button class="btn pri" type="button" id="pickBtn">行路データを選ぶ</button>
+    <button class="btn sec" type="button" id="sampleBtn">見本で試す</button>
+    <p class="err" id="dataErr" hidden></p>
+  </section>
+  <input type="file" id="file" accept=".json,application/json" hidden>
+
+  <section class="choose" id="choose" hidden>
+    <h1>なにをする？</h1>
+    <p><span class="nb">選ぶと、</span><span class="nb">その入れ方の画面になるよ。</span><span class="nb">あとから上で</span><span class="nb">切りかえられる。</span></p>
+    <button class="card opt" type="button" data-m="kb"><span class="t"><b>交番どおりに入れる</b><span><span class="nb">その日の枠を選ぶだけ。</span><span class="nb">何か月か先まで</span><span class="nb">一気に入る</span></span></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+    <button class="card opt" type="button" data-m="free"><span class="t"><b>勤務発表から入れる</b><span><span class="nb">交番順序で動いてない人・</span><span class="nb">時短の人。</span><span class="nb">スクショをAIに読ませて</span><span class="nb">1か月分</span></span></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+    <button class="card opt" type="button" data-m="one"><span class="t"><b>入れた予定を1日だけ変える</b><span><span class="nb">勤務変更・</span><span class="nb">休日出勤・出張。</span><span class="nb">その日だけ入れ直す</span></span></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+  </section>
+
+  <div id="app" hidden style="display:flex;flex-direction:column;gap:12px">
+    <div class="seg" role="tablist" aria-label="入れ方" id="modeSeg">
+      <button type="button" role="tab" data-m="kb">交番どおり</button>
+      <button type="button" role="tab" data-m="free">勤務発表</button>
+      <button type="button" role="tab" data-m="one">1日だけ</button>
+    </div>
+
+    <p class="hint" id="oneNote" hidden></p>
+
+    <button class="card row" type="button" id="startRow" hidden></button>
+
+    <section class="card imp" id="impCard" hidden>
+      <div class="hd"><b id="impTitle">勤務発表を読み込む</b><label><span>何月？</span><select id="impMonth" aria-label="何月の勤務"></select></label></div>
+      <div class="st"><span class="n">1</span><div class="b">
+        <p>お願い文をコピーする</p>
+        <button class="btn sec" type="button" id="impCopy">お願い文をコピー</button>
+      </div></div>
+      <div class="st"><span class="n">2</span><div class="b">
+        <p><span class="nb">自分のAIに貼って、</span><span class="nb">勤務表のスクショを付けて送る</span></p>
+        <p class="hint"><span class="nb">名前などの</span><span class="nb">個人の情報は</span><span class="nb">写さないでね。</span><span class="nb">1か月が2枚なら</span><span class="nb">2枚とも送る。</span></p>
+      </div></div>
+      <div class="st"><span class="n">3</span><div class="b">
+        <p><span class="nb">AIの返事を</span><span class="nb">まるごとコピーしたら</span></p>
+        <button class="btn pri" type="button" id="impPaste">貼り付けて読み込む</button>
+        <button class="lnk" type="button" id="impHand">うまく貼れないときは、手で貼る</button>
+        <div id="impHandBox" hidden style="display:flex;flex-direction:column;gap:8px">
+          <textarea id="impText" rows="6" spellcheck="false" autocomplete="off" aria-label="AIの返事" placeholder="ここを長押しして「ペースト」"></textarea>
+          <button class="btn sec" type="button" id="impRead">読み込む</button>
+        </div>
+        <p class="err" id="impErr" hidden></p>
+      </div></div>
+    </section>
+    <button class="card done-row" type="button" id="impDone" hidden></button>
+
+    <section class="note" id="note" hidden></section>
+
+    <section class="card calc" id="calCard">
+      <div class="mnav">
+        <button type="button" id="mPrev" aria-label="前の月"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <div class="c"><b id="mTitle"></b><small id="sum"></small></div>
+        <button type="button" id="mNext" aria-label="次の月"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></button>
+      </div>
+      <div class="cal" id="cal"></div>
+      <div class="calf">
+        <p class="hint" id="calHint"></p>
+        <button class="lnk sm" type="button" id="chClear" hidden></button>
+      </div>
+      <div class="legend"><span><i style="background:var(--kro)"></i>行路</span><span><i style="background:var(--kro-t)"></i>明け</span><span><i style="background:var(--rest)"></i>休み</span><span><i style="background:var(--hen)"></i>休日変形</span><span><i style="box-shadow:inset 0 0 0 2px var(--accent)"></i>変えた日</span></div>
+    </section>
+
+    <button class="card row set" type="button" id="setRow"><b>入れ方</b><span class="t"><span class="v" id="setSum"></span></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+
+    <details class="help">
+      <summary>はじめての人へ</summary>
+      <h3>iPhone</h3>
+      <ol>
+        <li><span class="nb">カレンダーのアプリで、</span><span class="nb">「行路」という名前の</span><span class="nb">カレンダーを</span><span class="nb">作っておくと便利。</span></li>
+        <li><span class="nb">「カレンダーに入れる」を</span><span class="nb">押すと、</span><span class="nb">予定の一覧が出るよ。</span><span class="nb">右上の「すべて追加」で、</span><span class="nb">入れるカレンダーに</span><span class="nb">「行路」を選ぶ。</span></li>
+        <li><span class="nb">ダイヤ改正や</span><span class="nb">交番が変わったときは、</span><span class="nb">「行路」の</span><span class="nb">カレンダーごと消してから、</span><span class="nb">もう一度入れる。</span></li>
+      </ol>
+      <h3>勤務が変わったとき</h3>
+      <ol>
+        <li><span class="nb">上の「1日だけ」で、</span><span class="nb">変わった日を押して</span><span class="nb">選び直す。</span></li>
+        <li><span class="nb">「変えた日だけ入れる」で</span><span class="nb">追加してから、</span><span class="nb">前に入れていた予定を</span><span class="nb">カレンダーのアプリで</span><span class="nb">消す。</span><span class="nb">前の予定は、</span><span class="nb">自動では</span><span class="nb">置きかわらないよ。</span></li>
+      </ol>
+      <h3>入れたあと</h3>
+      <ul>
+        <li><span class="nb">変えた日は</span><span class="nb">このスマホに</span><span class="nb">覚えておくけど、</span><span class="nb">しばらく開かないと</span><span class="nb">消えることがあるよ。</span><span class="nb">変えたら、</span><span class="nb">早めに入れてね。</span></li>
+        <li><span class="nb">最後は、</span><span class="nb">当直で次の勤務を</span><span class="nb">確認したときに、</span><span class="nb">カレンダーの時間とも</span><span class="nb">照らし合わせてね。</span></li>
+        <li><span class="nb">Androidは、</span><span class="nb">ファイルが保存されるので</span><span class="nb">開いて入れてね。</span><span class="nb">アプリによっては</span><span class="nb">入らないことも</span><span class="nb">あるみたい。</span></li>
+      </ul>
+    </details>
+  </div>
+
+  <p class="foot"><span class="nb">行路データ・設定・</span><span class="nb">変えた日は、</span><span class="nb">このスマホの中だけで</span><span class="nb">使ってるよ。</span><span class="nb">どこにも送らないし、</span><span class="nb">ほかの人には</span><span class="nb">見えない。</span></p>
+</main>
+
+<div class="dock" id="dock" hidden>
+  <div class="in">
+    <p class="done" id="done" hidden></p>
+    <button class="go" type="button" id="goBtn" disabled><span id="goT">カレンダーに入れる</span><span class="num" id="goN"></span></button>
+    <button class="go2" type="button" id="go2" hidden></button>
+  </div>
+</div>
+
+<div class="scrim" id="scrim" hidden></div>
+
+<!-- いつから・どの枠 -->
+<section class="sheet tall" id="pick" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="pickT" hidden>
+  <div class="sh-h"><b id="pickT">いつから・どの枠？</b><button class="ib" type="button" id="pickClose" aria-label="閉じる"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div class="sh-b">
+    <div class="when">
+      <label class="fld" for="day"><small>この日から</small><span class="v" id="dayText"></span><input type="date" id="day" aria-label="入れはじめる日"></label>
+      <label class="fld" for="qNum"><small>行路番号</small><input type="text" id="qNum" inputmode="numeric" autocomplete="off" placeholder="23"></label>
+    </div>
+    <p class="hint" id="fromNote" hidden style="margin-top:6px"></p>
+    <p style="margin:10px 0 8px;font-size:13px;line-height:1.6"><span class="nb">その日の自分の枠を押すと、</span><span class="nb">閉じてカレンダーに並ぶよ。</span></p>
+    <div class="kb-box"><table class="kb" id="kb" aria-label="交番表"></table></div>
+    <p class="hint" id="contNote" hidden style="margin-top:8px"></p>
+  </div>
+</section>
+
+<!-- 日を押したとき -->
+<section class="sheet tall" id="ds" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="dsDay" hidden>
+  <div class="dh">
+    <button class="ib" type="button" id="dsPrev" aria-label="前の日"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+    <b id="dsDay"></b>
+    <button class="ib" type="button" id="dsNext" aria-label="次の日"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></button>
+    <button class="ib" type="button" id="dsClose" aria-label="閉じる"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <p class="dnow" id="dsNow"></p>
+  <div class="q"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg><input type="search" id="dsQ" placeholder="行路番号で探す" autocomplete="off" enterkeyhint="search" aria-label="行路番号で探す"></div>
+  <div class="seg tabs3" role="tablist" aria-label="選ぶもの" id="dsTabs">
+    <button type="button" role="tab" data-t="kro">行路</button>
+    <button type="button" role="tab" data-t="rest">休み</button>
+    <button type="button" role="tab" data-t="own">時刻で入れる</button>
+  </div>
+  <div class="sh-b" id="dsBody" style="border-top:1px solid var(--sep)"></div>
+</section>
+
+<!-- 入れ方 -->
+<section class="sheet" id="set" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="setT" hidden>
+  <div class="sh-h"><b id="setT">入れ方</b><button class="ib" type="button" id="setClose" aria-label="閉じる"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div class="sh-b">
+    <div class="rows">
+      <div class="r" id="rngRow"><span class="t">入れる期間</span><select id="rng" aria-label="入れる期間"></select></div>
+      <div class="r sub" id="untilBox" hidden><span>この日まで</span><input type="date" id="until" style="max-width:none"></div>
+      <div class="r"><span class="t">休みの日も入れる<small><span class="nb">公休・特休などを</span><span class="nb">終日で入れる</span></small></span><span class="sw"><input type="checkbox" id="optRest" checked aria-label="休みの日も入れる"><i></i></span></div>
+      <div class="r"><span class="t">通知を付ける</span><span class="sw"><input type="checkbox" id="ntOn" checked aria-label="通知を付ける"><i></i></span></div>
+      <div id="ntBody">
+        <div class="r"><span class="t">ふだんの通知<small><span class="nb">出勤の何分前に</span><span class="nb">知らせるか</span></small></span><select id="ntBase" aria-label="ふだんの通知"></select></div>
+        <div class="r"><span class="t">朝早い出勤は別にする<small><span class="nb">決めた時間に</span><span class="nb">出勤する日だけ</span></small></span><span class="sw"><input type="checkbox" id="ntEarlyOn" checked aria-label="朝早い出勤は別にする"><i></i></span></div>
+        <div class="r sub" id="ntEarlyBox"><select id="ntFrom" aria-label="何時から"></select><span>〜</span><select id="ntTo" aria-label="何時台まで"></select><span>台の出勤は</span><select id="ntEarly" aria-label="朝早い出勤の通知"></select></div>
+        <div class="r"><span class="t">前の日にも知らせる<small><span class="nb">出勤の前の日の</span><span class="nb">決めた時刻に</span></small></span><span class="sw"><input type="checkbox" id="ntEveOn" aria-label="前の日にも知らせる"><i></i></span></div>
+        <div class="r sub" id="ntEveBox" hidden><span>前の日の</span><select id="ntEve" aria-label="前の日の時刻"></select><span>に知らせる</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 直してない日 -->
+<section class="sheet" id="warn" tabindex="-1" role="alertdialog" aria-modal="true" aria-labelledby="warnT" hidden>
+  <div class="sh-h"><b id="warnT">まだ直してない日があるよ</b><button class="ib" type="button" id="warnClose" aria-label="閉じる"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div class="sh-b">
+    <p style="margin:0 0 10px;font-size:13.5px"><span class="nb">このまま入れると、</span><span class="nb">直してない日は</span><span class="nb">入らないよ。</span><span class="nb">日を押すと</span><span class="nb">直せる。</span></p>
+    <ul class="wl" id="warnList"></ul>
+  </div>
+  <div class="sh-f"><div class="go-row"><button class="btn sec" type="button" id="warnGo">このまま入れる</button><button class="btn pri" type="button" id="warnFix">直す</button></div></div>
+</section>
+<script>
+(()=>{'use strict';
+const $=id=>document.getElementById(id);
+const LS={get(k){ try{ return localStorage.getItem(k) }catch(e){ return null } }, set(k,v){ try{ localStorage.setItem(k,v) }catch(e){} }};
+const KEY='kouroCal.data.v1', KEY_LAST='kouroCal.last.v1', KEY_OPT='kouroCal.opt.v1', KEY_CH='kouroCal.change.v1', KEY_REC='kouroCal.recent.v1';
+/* 前の名前で覚えていたものは、新しい名前に移す */
+['data','last','opt'].forEach(k=>{ const o='gyoroCal.'+k+'.v1', n='kouroCal.'+k+'.v1'; const v=LS.get(o); if(v!=null&&LS.get(n)==null)LS.set(n,v) });
+/* mode:kb=交番どおり、free=勤務発表、one=1日だけ。null ならはじめに選んでもらう */
+const S={D:null,sample:false,mode:null,pos:'',day:'',rng:'m3',until:'',fmon:'',frng:'m1',lastBase:'kb',rows:[],start:'',end:'',mi:0,sel:'',tab:'kro',q:'',kind:'kb',ch:{},dirty:{},impOpen:false,impIss:null,impMon:''};
+/* 通知:ふだんは出勤の何分前。朝早い出勤(何時〜何時台)は別の分。前の日の決めた時刻にも知らせる */
+const NT_DEF={on:true,base:120,earlyOn:true,from:4,to:7,early:30,eveOn:false,eve:'21:00'};
+let OPT={}; try{ OPT=JSON.parse(LS.get(KEY_OPT)||'null')||{} }catch(e){ OPT={} } if(!OPT||typeof OPT!=='object')OPT={};
+let NT=Object.assign({},NT_DEF,OPT.nt&&typeof OPT.nt==='object'?OPT.nt:{});
+if(OPT.rest===false)$('optRest').checked=false;
+S.mode=['kb','free','one'].includes(OPT.mode)?OPT.mode:null;
+if(['m1','m2','m3','date'].includes(OPT.rng))S.rng=OPT.rng; if(['m1','m2','m3'].includes(OPT.frng))S.frng=OPT.frng; if(OPT.lastBase==='free')S.lastBase='free';
+const saveOpt=()=>{ const o={nt:NT,rest:$('optRest').checked,mode:S.mode,rng:S.rng,frng:S.frng,until:S.until,lastBase:S.lastBase,fmon:S.fmon};
+  if(S.D&&!S.sample&&S.pos){ o.kbFrom=S.D.from; o.kbDay=S.day; o.kbPos=S.pos } else if(OPT.kbFrom){ o.kbFrom=OPT.kbFrom; o.kbDay=OPT.kbDay; o.kbPos=OPT.kbPos }
+  OPT=o; LS.set(KEY_OPT,JSON.stringify(o)) };
+
+/* ---------- 日付 ---------- */
+const pad=n=>String(n).padStart(2,'0');
+const iso=(y,m,d)=>`${y}-${pad(m)}-${pad(d)}`;
+const P=s=>{ const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s||'')); return m?{y:+m[1],m:+m[2],d:+m[3]}:null };
+const addDays=(s,n)=>{ const q=P(s), t=new Date(q.y,q.m-1,q.d+n); return iso(t.getFullYear(),t.getMonth()+1,t.getDate()) };
+const diffDays=(a,b)=>{ const x=P(a), y=P(b); return Math.round((Date.UTC(y.y,y.m-1,y.d)-Date.UTC(x.y,x.m-1,x.d))/864e5) };
+const today=()=>{ const t=new Date(); return iso(t.getFullYear(),t.getMonth()+1,t.getDate()) };
+const WD='日月火水木金土';
+const wd=s=>{ const q=P(s); return new Date(q.y,q.m-1,q.d).getDay() };
+const jpDate=s=>{ const q=P(s); return `${q.y}年${q.m}月${q.d}日` };
+const md=s=>{ const q=P(s); return `${q.m}/${q.d}` };
+const tm=t=>String(t||'').replace(/^0(\d)/,'$1');
+const mins=t=>{ const [h,m]=String(t).split(':').map(Number); return h*60+m };
+const hm=n=>{ n=((n%1440)+1440)%1440; return `${Math.floor(n/60)}:${pad(n%60)}` };
+const leadTxt=n=>n>=60?(n%60?`${Math.floor(n/60)}時間${n%60}分前`:`${n/60}時間前`):`${n}分前`;
+
+/* 祝日(振替休日・国民の休日も) */
+const HOL=new Map();
+function holidays(y){
+  if(HOL.has(y))return HOL.get(y);
+  const H=new Map(), key=(m,d)=>m+'-'+d, add=(m,d,n)=>H.set(key(m,d),n);
+  const w=(m,d)=>new Date(y,m-1,d).getDay(), dim=m=>new Date(y,m,0).getDate();
+  const mon=(m,n)=>1+((8-w(m,1))%7)+(n-1)*7;
+  const a=y-1980, sp=Math.floor(20.8431+0.242194*a-Math.floor(a/4)), au=Math.floor(23.2488+0.242194*a-Math.floor(a/4));
+  add(1,1,'元日'); add(1,mon(1,2),'成人の日'); add(2,11,'建国記念の日'); add(2,23,'天皇誕生日');
+  add(3,sp,'春分の日'); add(4,29,'昭和の日'); add(5,3,'憲法記念日'); add(5,4,'みどりの日'); add(5,5,'こどもの日');
+  add(7,mon(7,3),'海の日'); add(8,11,'山の日'); add(9,mon(9,3),'敬老の日'); add(9,au,'秋分の日');
+  add(10,mon(10,2),'スポーツの日'); add(11,3,'文化の日'); add(11,23,'勤労感謝の日');
+  const base=new Map(H), at=t=>key(t.getMonth()+1,t.getDate());
+  for(let m=1;m<=12;m++)for(let d=1;d<=dim(m);d++){ if(base.has(key(m,d))||w(m,d)===0)continue;
+    const p=new Date(y,m-1,d-1), n=new Date(y,m-1,d+1); if(p.getFullYear()===y&&n.getFullYear()===y&&base.has(at(p))&&base.has(at(n)))H.set(key(m,d),'国民の休日') }
+  [...base.keys()].forEach(k0=>{ const [m,d]=k0.split('-').map(Number); if(w(m,d)!==0)return;
+    let t=new Date(y,m-1,d+1); while(t.getFullYear()===y&&H.has(at(t)))t=new Date(y,t.getMonth(),t.getDate()+1);
+    if(t.getFullYear()===y)H.set(at(t),'振替休日') });
+  HOL.set(y,H); return H }
+/* その日が休日ダイヤか(土日・祝日・年末年始) */
+function isKyu(s,D){ const q=P(s), w=wd(s); if(w===0||w===6)return true; if(holidays(q.y).has(q.m+'-'+q.d))return true;
+  const ex=Array.isArray(D&&D.kyuExtra)?D.kyuExtra:['12-30','12-31','1-1','1-2','1-3']; return ex.includes(q.m+'-'+q.d) }
+const isHol=s=>{ const q=P(s); return holidays(q.y).has(q.m+'-'+q.d) };
+
+/* ---------- 行路データ ---------- */
+function okData(D){ return !!(D&&D.type==='gencan-kro'&&Array.isArray(D.kro)&&D.kro.length&&/^\d{4}-\d{2}-\d{2}$/.test(String(D.from||''))&&Array.isArray(D.kotei)&&D.kotei.length) }
+const isRestV=v=>/[公特ヨ休]/.test(String(v||''));
+const kroOf=(D,n)=>D.kro.find(x=>x.n===n);
+/* 行路を、その日の予定にする(平日か休日かで時刻を選ぶ) */
+function plan(D,n,s){ const o=kroOf(D,n); if(!o)return null; const k1=isKyu(s,D);
+  if(o.g==='泊まり'){ const s2=addDays(s,1), k2=isKyu(s2,D), a=k1?o.k:o.h, b=k2?o.k:o.h; if(!Array.isArray(a)||!Array.isArray(b))return null;
+    const ty=(k1?'休':'平')+(k2?'休':'平'); return {n,o,g:o.g,t:ty+n+'行路',s,e:s2,tm:a[0],te:b[1],k1,k2,loc:(D.places&&D.places[o.p])||o.p||'',p:o.p||''} }
+  const v=k1?o.k:o.h;
+  if(typeof v==='string'){ const hx=/変形/.test(v)&&D.kyuHen?D.kro.find(x=>x.n===D.kyuHen&&Array.isArray(x.k)):null;
+    return hx?{n,o,g:'休日予備',t:v,s,tm:hx.k[0],te:hx.k[1],k1,k2:k1}:{n,o,g:'休日予備',t:v,s,all:true,k1} }
+  if(!Array.isArray(v))return null;
+  return {n,o,g:o.g,t:(o.g==='予備'||o.g==='そのほか')?n:(k1?'休':'平')+n+'行路',s,tm:v[0],te:v[1],k1,k2:k1} }
+/* 交番表の順に、1日ずつ予定を作る */
+function build(D,start,pos,end){ const C=D.kotei, N=C.length, i0=C.findIndex(c=>c.pos===pos); if(i0<0)return [];
+  const rows=[]; let i=i0, s=start, g=0;
+  while(s<=end&&g++<400){ const c=C[i%N], v=c.v, r={s,pos:c.pos,v};
+    if(kroOf(D,v)){ const pl=plan(D,v,s); if(pl)r.pl=pl; else r.skip='この日は、この行路がありません' }
+    else if(v==='-')r.ake=true;
+    else if(isRestV(v))r.rest=true;
+    else r.skip='行路データにない枠です';
+    rows.push(r); i++; s=addDays(s,1) }
+  return rows }
+function endOf(start,rng,until){ const q=P(start); if(rng==='date'){ if(P(until)){ const mx=addDays(start,400); return until<start?start:until>mx?mx:until } return start }
+  const add=rng==='m3'?3:rng==='m2'?2:1, t=new Date(q.y,q.m-1+add,0); return iso(t.getFullYear(),t.getMonth()+1,t.getDate()) }
+
+/* ---------- 日ごとの入れかえ ----------
+   入れかえは日付ごとに1つ。{k:'kro',n} 行路 / {k:'rest',v} 休み / {k:'own',t,a,b,all} 手で入れた予定 / {k:'none'} 入れない
+   勤務発表から読んだとき:{k:'ake'} 明け / {k:'todo',code,cand} データにない番号(臨時など)や、時短の候補が2つあるもの
+   hol を持つものは休日出勤(hol は、その日の休みの名前) */
+const RESTS=['公休','特休','年休','休み'];
+/* 1日ずつ選ぶ人の並び(はじめは空) */
+function blankRows(start,end){ const rows=[]; for(let s=start,g=0;s<=end&&g<400;s=addDays(s,1),g++)rows.push({s,pos:'',v:'',blank:true}); return rows }
+/* 手で入れた予定。退勤が出勤より早い(同じ)ときは、次の日の退勤 */
+function ownPlan(D,o,s){ const t=String(o.t||'').trim()||'勤務', k1=isKyu(s,D);
+  if(o.all)return {n:t,g:'手入力',t,s,all:true,k1,own:true};
+  if(!/^\d{1,2}:\d{2}$/.test(o.a||'')||!/^\d{1,2}:\d{2}$/.test(o.b||''))return null;
+  const nx=mins(o.b)<=mins(o.a), e=nx?addDays(s,1):s;
+  return {n:t,g:'手入力',t,s,e,tm:o.a,te:o.b,k1,k2:nx?isKyu(e,D):k1,own:true} }
+function chRow(D,r,o){ const n={s:r.s,pos:'',v:'',ch:o,base:r};
+  if(o.k==='kro'){ n.v=o.n; if(kroOf(D,o.n)){ const pl=plan(D,o.n,r.s); if(pl)n.pl=pl; else n.skip='この日は、この行路がありません' } else n.skip='行路データにない行路です' }
+  else if(o.k==='rest'){ n.rest=true; n.v=o.v }
+  else if(o.k==='own'){ n.v=o.t||'勤務'; const pl=ownPlan(D,o,r.s); if(pl)n.pl=pl; else n.skip='時刻が入っていません' }
+  else if(o.k==='ake'){ n.ake=true; n.v='-' }
+  else if(o.k==='todo'){ n.todo=true; n.v=String(o.code||'？') }
+  else n.none=true;
+  if(o.hol){ n.hol=String(o.hol); if(n.pl)n.pl=Object.assign({},n.pl,{t:n.pl.t+'（休日出勤）',hol:n.hol}) }
+  return n }
+/* 交番どおりの並びに、入れかえを重ねる。泊まりの次の日は明けにする。前の日を変えて明けだけ残った日は、確かめてもらう */
+function applyCh(D,rows,ch){
+  for(let i=0;i<rows.length;i++){ const o=ch&&ch[rows[i].s]; if(o)rows[i]=chRow(D,rows[i],o) }
+  for(let i=1;i<rows.length;i++){ const r=rows[i], pv=rows[i-1], tom=!!(pv.pl&&pv.pl.e&&pv.pl.e!==pv.pl.s);
+    if(r.ch)continue;
+    if(tom&&!r.ake)rows[i]={s:r.s,pos:r.pos,v:'-',ake:true,auto:true,base:r};
+    else if(!tom&&r.ake&&(pv.ch||pv.auto)){ rows[i]=Object.assign({},r,{ake:false,chk:true}) } }
+  return rows }
+/* 入れかえは、このスマホに覚えておく(行路データの改正ごと)。2か月より前の日は捨てる */
+/* 「交番から」と「1日ずつ」は別々に覚える。改正ごとにも分ける(改正の前後で両方のデータを使う人がいるため) */
+let CHS={kb:{},free:{},dirty:{kb:{},free:{}}};
+const isObj=x=>!!x&&typeof x==='object'&&!Array.isArray(x);
+/* dirty は、まだカレンダーに入れていない変更(日付ごと)。「変えた日だけ入れる」で使う */
+function loadCh(D){ CHS={kb:{},free:{},dirty:{kb:{},free:{}}};
+  if(!S.sample){ try{ const o=JSON.parse(LS.get(KEY_CH)||'null'), e=o&&isObj(o.by)&&o.by[D.from]; if(isObj(e)){ if(isObj(e.kb))CHS.kb=e.kb; if(isObj(e.free))CHS.free=e.free;
+    if(isObj(e.dirty)){ if(isObj(e.dirty.kb))CHS.dirty.kb=e.dirty.kb; if(isObj(e.dirty.free))CHS.dirty.free=e.dirty.free } } }catch(e){} } }
+function saveCh(){ if(S.sample||!S.D)return; const lim=addDays(today(),-62);
+  [CHS.kb,CHS.free,CHS.dirty.kb,CHS.dirty.free].forEach(m=>Object.keys(m).forEach(k=>{ if(k<lim)delete m[k] }));
+  let o=null; try{ o=JSON.parse(LS.get(KEY_CH)||'null') }catch(e){ o=null } if(!isObj(o)||!isObj(o.by))o={v:2,by:{}};
+  o.by[S.D.from]={kb:CHS.kb,free:CHS.free,dirty:CHS.dirty};
+  const ks=Object.keys(o.by).filter(k=>k!==S.D.from).sort(); while(ks.length>2)delete o.by[ks.shift()];
+  LS.set(KEY_CH,JSON.stringify(o)) }
+/* 最近えらんだもの(すぐ選べるように) */
+function recent(){ let a=[]; try{ a=JSON.parse(LS.get(KEY_REC)||'[]') }catch(e){ a=[] } if(!Array.isArray(a))return [];
+  return a.filter(o=>o&&(o.k==='rest'&&RESTS.includes(o.v)||o.k==='own'||o.k==='kro'&&S.D&&kroOf(S.D,o.n))) }
+function addRecent(o){ if(o.k==='none'||S.sample)return; const key=JSON.stringify(o); const a=[o].concat(recent().filter(x=>JSON.stringify(x)!==key)).slice(0,8); LS.set(KEY_REC,JSON.stringify(a)) }
+const sameCh=(a,b)=>!!a&&!!b&&JSON.stringify(a)===JSON.stringify(b);
+/* 前の日から作って、前の日の泊まりや入れかえが、範囲の1日目にも効くようにする。前の日は返さない */
+function makeRows(D,ch,start,end,pos){ const pv=addDays(start,-1); let rows;
+  if(!pos)rows=blankRows(pv,end);
+  else{ const C=D.kotei, N=C.length, i0=C.findIndex(c=>c.pos===pos); if(i0<0)return []; rows=build(D,pv,C[(i0-1+N)%N].pos,end) }
+  applyCh(D,rows,ch);
+  rows.forEach((r,i)=>{ if(r.pl&&r.pl.e&&r.pl.e!==r.pl.s&&rows[i+1]&&rows[i+1].ake){ rows[i+1]._te=r.pl.te; rows[i+1]._k2=!r.pl.own&&r.pl.k2 } });
+  return rows.slice(1) }
+const isTom=r=>!!(r&&r.pl&&r.pl.e&&r.pl.e!==r.pl.s);
+
+/* ---------- 通知 ---------- */
+function leadOf(pl){ if(!NT.on||!pl||pl.all||!pl.tm)return null; const h=+String(pl.tm).split(':')[0]; return (NT.earlyOn&&h>=NT.from&&h<=NT.to)?NT.early:NT.base }
+const durOf=n=>'-PT'+(Math.floor(n/60)?Math.floor(n/60)+'H':'')+(n%60?n%60+'M':'')+(n===0?'0M':'');
+
+/* ---------- カレンダー用ファイル(.ics) ---------- */
+const esc=s=>String(s||'').replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\r?\n/g,'\\n');
+function fold(line){ const enc=new TextEncoder(); if(enc.encode(line).length<=75)return line; const out=[]; let cur='', n=0;
+  for(const ch of line){ const b=enc.encode(ch).length; if(n+b>(out.length?74:75)){ out.push(cur); cur=''; n=0 } cur+=ch; n+=b } out.push(cur); return out.join('\r\n ') }
+function utc(s,t){ const q=P(s), [h,mi]=String(t||'00:00').split(':').map(Number); const d=new Date(Date.UTC(q.y,q.m-1,q.d,h-9,mi)); return `${d.getUTCFullYear()}${pad(d.getUTCMonth()+1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}00Z` }
+const dt=s=>String(s).replace(/-/g,'');
+/* 予定のUIDは、日付と中身から作る。同じ中身なら同じUID。中身が変わった日は、別の予定として入る(iPhone は同じUIDの予定を置きかえないため) */
+const hash=x=>{ let h=0x811c9dc5; for(const c of String(x)){ h^=c.codePointAt(0); h=Math.imul(h,0x01000193)>>>0 } return h.toString(36) };
+const uid=(D,s,key)=>'kouro-'+dt(D.from)+'-'+dt(s)+'-'+hash(key)+'@kouro-calendar';
+function ics(D,rows,opt){ const now=new Date(), stamp=`${now.getUTCFullYear()}${pad(now.getUTCMonth()+1)}${pad(now.getUTCDate())}T${pad(now.getUTCHours())}${pad(now.getUTCMinutes())}${pad(now.getUTCSeconds())}Z`;
+  const L=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//KouroCalendar//JA','CALSCALE:GREGORIAN','METHOD:PUBLISH','X-WR-CALNAME:行路','X-WR-TIMEZONE:Asia/Tokyo'];
+  const rev=`${jpDate(D.from)}${D.rev||'改正'}の行路`; let n=0;
+  rows.forEach(r=>{
+    if(r.pl){ const pl=r.pl; n++;
+      const a=pl.all?'DTSTART;VALUE=DATE:'+dt(pl.s):'DTSTART:'+utc(pl.s,pl.tm), b=pl.all?'DTEND;VALUE=DATE:'+dt(addDays(pl.s,1)):'DTEND:'+utc(pl.e||pl.s,pl.te||pl.tm);
+      L.push('BEGIN:VEVENT','UID:'+uid(D,r.s,[pl.t,a,b,pl.loc||''].join('|')),'DTSTAMP:'+stamp,a,b);
+      L.push('SUMMARY:'+esc(pl.t)); if(pl.loc)L.push('LOCATION:'+esc(pl.loc));
+      const ds=[]; if(!pl.all){ ds.push('出勤 '+tm(pl.tm)); if(pl.te)ds.push('退勤 '+tm(pl.te)+(pl.e&&pl.e!==pl.s?'（翌日）':'')) } if(pl.loc)ds.push('泊地 '+pl.loc); if(pl.hol)ds.push(pl.hol+'の日に休日出勤'); if(r.pos)ds.push('交番 '+r.pos); if(!pl.own)ds.push(rev);
+      if(ds.length)L.push('DESCRIPTION:'+esc(ds.join('\n')));
+      const ld=leadOf(pl); if(ld!=null)L.push('BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:'+esc(pl.t+'　出勤 '+tm(pl.tm)),'TRIGGER:'+durOf(ld),'END:VALARM');
+      if(NT.on&&NT.eveOn&&!pl.all&&pl.tm)L.push('BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:'+esc('あしたは '+pl.t+'　出勤 '+tm(pl.tm)),'TRIGGER;VALUE=DATE-TIME:'+utc(addDays(pl.s,-1),NT.eve),'END:VALARM');
+      L.push('END:VEVENT') }
+    else if(r.ake&&r.hol&&opt.rest){ n++; const sm=r.hol+'（明けは休日出勤）';
+      L.push('BEGIN:VEVENT','UID:'+uid(D,r.s,'rest|'+sm),'DTSTAMP:'+stamp,'DTSTART;VALUE=DATE:'+dt(r.s),'DTEND;VALUE=DATE:'+dt(addDays(r.s,1)),'SUMMARY:'+esc(sm),'DESCRIPTION:'+esc(rev),'TRANSP:TRANSPARENT','END:VEVENT') }
+    else if(r.rest&&opt.rest){ n++; const sm=r.ch?r.v:'休日(特/公)';
+      L.push('BEGIN:VEVENT','UID:'+uid(D,r.s,'rest|'+sm),'DTSTAMP:'+stamp,'DTSTART;VALUE=DATE:'+dt(r.s),'DTEND;VALUE=DATE:'+dt(addDays(r.s,1)),'SUMMARY:'+esc(sm),'DESCRIPTION:'+esc(r.ch?rev:'交番 '+r.pos+'（'+r.v+'）\n'+rev),'TRANSP:TRANSPARENT','END:VEVENT') } });
+  L.push('END:VCALENDAR'); return {text:L.map(fold).join('\r\n')+'\r\n',n} }
+
+/* ---------- 見本(画面を試すための、作りものの行路) ---------- */
+const SAMPLE={type:'gencan-kro',v:1,name:'見本乗務',from:'2026-04-01',rev:'改正',places:{'A':'A駅','B':'B電留線'},rest:['公休','特休','年休'],kyuHen:'変形',kyuExtra:['12-30','12-31','1-1','1-2','1-3'],
+  kro:[{n:'1',g:'日勤',h:['05:10','13:40'],k:['05:30','14:00']},{n:'2',g:'日勤',h:['08:20','17:10'],k:'休日変形'},{n:'3',g:'日勤',h:['10:05','19:20'],k:['09:50','18:30']},
+       {n:'4',g:'泊まり',p:'A',h:['13:20','09:40'],k:['12:50','10:10']},{n:'5',g:'泊まり',p:'B',h:['16:30','11:05'],k:['15:40','11:30']},{n:'6',g:'泊まり',p:'A',h:['17:45','12:20'],k:['17:10','12:00']},
+       {n:'変形',g:'そのほか',h:['09:00','17:20'],k:['09:00','17:20']}],
+  kotei:[['1-A','1'],['1-B','4'],['1-C','-'],['1-D','公/特/変'],['1-E','2'],['1-F','5'],['1-G','-'],['2-A','公/特/変'],['2-B','3'],['2-C','6'],['2-D','-'],['2-E','公/特'],['2-F','公/特/変']].map(([pos,v])=>({pos,v}))};
+
+/* ---------- 勤務発表から入れる ----------
+   スクショは各自のAIに読ませる。ページはAIの返事(1日1行)を受け取るだけ。どこにも送らない */
+const ASK=['添付した勤務表のスクリーンショットから、勤務を読み取ってください。','',
+  '返す形','・1行目に年月を書く（例：2026年10月）','・2行目から、1日1行で「日(曜日) 1段目 2段目」と書く',
+  '・1段目は、日付のすぐ下の枠の文字','・2段目は、1段目より下の枠に文字があるときだけ書く（なければ書かない）',
+  '・枠の文字は見たとおりに書く（番号・休みの名前・ー などの記号も、そのまま）','・読めない枠は「？」と書く',
+  '・スクリーンショットが2枚あって日が重なっているときは、同じ日を2回書かない','・説明や表、飾りの記号は付けず、この形だけを返す','',
+  '例','2026年10月','1(木) 1005','2(金) 0032','3(土) ー','4(日) 公休','5(月) 特休 ー'].join('\n');
+const ZEN=x=>String(x||'').replace(/[！-～]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0)).replace(/　/g,' ');
+const isDash=x=>/^[ー－―‐\-—–─━〜~_]+$/.test(x);
+/* 枠の文字を、入れかえの形にする。前に付いた英字と0を外して行路の番号にする。候補が2つなら選んでもらう */
+function mapTok(D,tok){ const x=ZEN(tok).trim().replace(/^[「『"'【]+|[」』"'】]+$/g,''); if(!x)return null;
+  if(isDash(x))return {k:'ake'};
+  if(/^[?？]+$/.test(x))return {k:'todo',code:'？'};
+  const hit=D.kro.find(o=>zen(o.n)===zen(x)); if(hit)return {k:'kro',n:hit.n};
+  if(/休/.test(x))return {k:'rest',v:x};
+  const m=/^([A-Za-z]{0,2})\s*0*(\d{1,5})\s*([A-Za-z]?)$/.exec(x);
+  if(m){ const num=m[2], suf=m[3].toLowerCase(), ex=D.kro.find(o=>zen(o.n)===num+suf); if(ex)return {k:'kro',n:ex.n};
+    if(!suf){ const cand=D.kro.filter(o=>{ const z=zen(o.n); return z.length===num.length+1&&z.startsWith(num)&&/[a-z]$/.test(z) }).map(o=>o.n);
+      if(cand.length===1)return {k:'kro',n:cand[0]}; if(cand.length>1)return {k:'todo',code:x,cand} } }
+  return {k:'todo',code:x} }
+/* AIの返事を読む。1日1行(「1(木) 1005」「10/1 1005」「1日 木 1005」など)。JSONで返ってきても読む */
+function parseDuty(text){ const t=ZEN(text).replace(/\r/g,'').replace(/```\w*/g,''), R={y:0,m:0,rows:{},dup:[]};
+  const ym=/(20\d{2})\s*[年\/\-.]\s*(\d{1,2})(?!\d)/.exec(t); if(ym&&+ym[2]>=1&&+ym[2]<=12){ R.y=+ym[1]; R.m=+ym[2] }
+  const js=/\[[\s\S]*\]/.exec(t);
+  if(js){ try{ const a=JSON.parse(js[0]); if(Array.isArray(a)){ a.forEach(o=>{ if(!o||typeof o!=='object')return;
+      const d=+(o.day||o.d||o['日']||String(o.date||'').split(/[-\/]/).pop()), a1=o.a||o.row1||o.duty||o['1段目']||o.code, b1=o.b||o.row2||o['2段目'];
+      if(d>=1&&d<=31&&a1)R.rows[d]={a:String(a1),b:b1?String(b1):'',w:''} }); if(Object.keys(R.rows).length)return R } }catch(e){} }
+  t.split('\n').forEach(line=>{ const L=line.trim().replace(/^[-*・•>]+\s*/,'').replace(/\*\*/g,'').replace(/[|｜]/g,' ').trim(); if(!L)return;
+    if(/^20\d{2}\s*[年\/\-.]\s*\d{1,2}\s*月?[^\d]*$/.test(L)&&!/[A-Za-z]\d|休|ー/.test(L.replace(/^20\d{2}\s*[年\/\-.]\s*\d{1,2}\s*月?/,'')))return;
+    const m=/^(?:20\d{2}\s*[年\/\-.]\s*)?(?:(\d{1,2})\s*[\/\-.月]\s*)?(\d{1,2})(?!\d)(?!月)\s*日?\s*(?:[(（]\s*([日月火水木金土])\s*(?:曜日?)?\s*[)）])?\s*[:：,、]?\s*(.*)$/.exec(L);
+    if(!m)return; const d=+m[2]; if(!(d>=1&&d<=31))return;
+    let toks=m[4].split(/[\s,、\/／]+/).filter(Boolean), w=m[3]||'';
+    if(!w&&toks.length&&/^[日月火水木金土](?:曜日?)?$/.test(toks[0])){ w=toks[0][0]; toks.shift() }
+    if(!toks.length)return;
+    if(R.rows[d])R.dup.push(d);
+    R.rows[d]={a:toks[0],b:toks[1]||'',w} });
+  return R }
+/* その月の入れかえにして、怪しい日を拾う */
+function readDuty(D,R,y,m){ const dim=new Date(y,m,0).getDate(), days={}, iss=new Map(), key=d=>iso(y,m,d);
+  const say=(d,...a)=>{ if(!iss.has(d))iss.set(d,[]); iss.get(d).push(a) };
+  const miss=[];
+  for(let d=1;d<=dim;d++){ const x=R.rows[d]; let o=x?mapTok(D,x.a):null;
+    if(!o){ miss.push(d); continue }
+    if(x.b){ const o2=mapTok(D,x.b); if(o2){ if(o.k==='rest')o2.hol=o.v; o=o2 } }
+    days[key(d)]=o;
+    if(x.w&&WD[wd(key(d))]!==x.w)say(d,`曜日が「${x.w}」になってる。`,'読み違いかも。');
+    if(o.k==='todo')o.cand?say(d,`${o.code}は`,`${o.cand.join(' か ')} の`,'どっち？'):o.code==='？'?say(d,'AIが読めなかった枠。'):say(d,`${o.code}は`,'行路データにない番号。','臨時なら、','時刻を入れてね。');
+    if(o.k==='kro'&&!plan(D,o.n,key(d)))say(d,`${o.n}行路は、`,'この日にはない行路。','確かめてね。') }
+  const tomOf=o=>!!o&&o.k==='kro'&&!!kroOf(D,o.n)&&kroOf(D,o.n).g==='泊まり';
+  for(let d=1;d<=dim;d++){ const o=days[key(d)], n=days[key(d+1)], p=days[key(d-1)];
+    if(d<dim&&tomOf(o)&&n&&n.k!=='ake')say(d+1,'前の日が泊まりなのに、','「ー」になってない。','確かめてね。');
+    if(d>1&&o&&o.k==='ake'&&p&&!tomOf(p)&&p.k!=='todo')say(d,'前の日が泊まりじゃないのに、','「ー」になってる。','確かめてね。') }
+  R.dup.forEach(d=>{ if(d<=dim)say(d,'同じ日が2回あった。','あとの方を使ったよ。') });
+  const list=[...iss.entries()].map(([d,a])=>({d,lab:d+'日',a:[].concat(...a)}));
+  /* 読めなかった日は、続いていればまとめる(返事が途中で切れたとき) */
+  for(let i=0;i<miss.length;){ let j=i; while(j+1<miss.length&&miss[j+1]===miss[j]+1)j++;
+    const a=miss[i], z=miss[j];
+    list.push(z-a>=2?{d:a,lab:`${a}〜${z}日`,a:['読めなかった日。','AIの返事が','途中で切れてるかも。','続きを貼るか、','並べたあとに選んでね。']}:null);
+    if(z-a<2)for(let k=a;k<=z;k++)list.push({d:k,lab:k+'日',a:['読めなかった日。']});
+    i=j+1 }
+  const L=list.filter(Boolean).sort((p,q)=>p.d-q.d);
+  return {y,m,dim,days,iss:L,n:Object.keys(days).length,bad:new Set(miss.concat(L.map(x=>x.d))),nBad:new Set(miss.concat([...iss.keys()])).size} }
+
+/* ---------- 画面の道具 ---------- */
+const escH=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+/* 文を、言葉の途中で折り返さない単位(文節)でつなぐ。iPhone の Safari は自動で文節を見てくれないため */
+const ph=(...a)=>a.filter(x=>x!=='').map(x=>'<span class="nb">'+escH(x)+'</span>').join('');
+const phs=a=>a.map((x,i)=>(i&&!/^（/.test(x)?' ':'')+ph(x)).join('');
+const placeOf=(D,o)=>o&&o.g==='泊まり'&&o.p?((D.places&&D.places[o.p])||o.p):'';
+const zen=x=>String(x||'').replace(/[０-９Ａ-Ｚａ-ｚ]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0)).trim().toLowerCase();
+const isIOS=()=>/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+const curMon=()=>{ const q=P(today()); return `${q.y}-${pad(q.m)}` };
+const monLab=m=>{ const [y,mm]=m.split('-').map(Number); return `${mm}月` };
+const dLab=s=>`${P(s).d}日（${WD[wd(s)]}）`;
+const CHEV='<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>';
+
+/* ---------- どの記録・どの並びを使うか ---------- */
+/* 前回の続き(交番の枠):いま選んでいる枠、なければ前にカレンダーへ入れたときの枠 */
+function anchor(){ const D=S.D; if(!D)return null; const ok=p=>D.kotei.some(c=>c.pos===p);
+  if(S.pos&&P(S.day)&&ok(S.pos))return {day:S.day,pos:S.pos};
+  let L=null; try{ L=JSON.parse(LS.get(KEY_LAST)||'null') }catch(e){ L=null }
+  if(!S.sample&&L&&L.from===D.from&&P(L.day)&&ok(L.pos))return {day:L.day,pos:L.pos};
+  return null }
+function posAt(a,day){ const C=S.D.kotei, N=C.length, i0=C.findIndex(c=>c.pos===a.pos), off=diffDays(a.day,day); return C[((i0+off)%N+N)%N].pos }
+/* 1日だけ:前に使った方の上で変える。交番の枠が分からなければ、勤務発表(または空)の上で */
+function kindOf(){ if(S.mode==='kb')return 'kb'; if(S.mode==='free')return 'free'; return S.lastBase==='kb'&&anchor()?'kb':'free' }
+function range(){
+  if(S.mode==='kb'){ if(!S.pos||!P(S.day))return null; return {start:S.day,end:endOf(S.day,S.rng,S.until),pos:S.pos} }
+  if(S.mode==='free'){ const start=(S.fmon||curMon())+'-01'; return {start,end:endOf(start,S.frng),pos:''} }
+  const q=P(today()), start=iso(q.y,q.m,1), end=endOf(start,'m2');
+  if(kindOf()==='kb'){ const a=anchor(); return {start,end,pos:posAt(a,start)} }
+  return {start,end,pos:''} }
+const rowAt=s=>S.rows.find(r=>r.s===s);
+const baseOf=r=>r&&(r.ch||r.auto)?r.base:r;
+const dirtyList=()=>S.rows.filter(r=>S.dirty[r.s]).map(r=>r.s);
+const evCount=(rows,rest)=>rows.filter(r=>r.pl||(rest&&(r.rest||r.ake&&r.hol))).length;
+function monthHasFree(m){ return Object.keys(CHS.free).some(k=>k.slice(0,7)===m) }
+
+/* ---------- データ ---------- */
+function setData(D,sample){ S.D=D; S.sample=!!sample; S.pos=''; S.day=''; S.mi=0; S.impIss=null;
+  if(!sample)LS.set(KEY,JSON.stringify(D));
+  loadCh(D);
+  if(!sample&&OPT.kbFrom===D.from&&D.kotei.some(c=>c.pos===OPT.kbPos)&&P(OPT.kbDay)){ S.day=OPT.kbDay; S.pos=OPT.kbPos }
+  if(sample){ S.day=today(); S.pos='1-B' }
+  S.fmon=/^\d{4}-\d{2}$/.test(OPT.fmon||'')?OPT.fmon:curMon();
+  $('dataErr').hidden=true; $('dataBtn').hidden=false;
+  $('dataLine').innerHTML=`${escH(D.name||'行路データ')}${S.sample?'<span class="tag">見本</span>':''}　${escH(jpDate(D.from))}${escH(D.rev||'改正')}`;
+  renderGrid(); update() }
+
+/* ---------- 画面全体 ---------- */
+function update(){ const D=S.D;
+  $('hello').hidden=!!D; $('choose').hidden=!D||!!S.mode; $('app').hidden=!D||!S.mode; $('dock').hidden=!D||!S.mode;
+  if(!D||!S.mode)return;
+  [...$('modeSeg').children].forEach(b=>{ const on=b.dataset.m===S.mode; b.classList.toggle('on',on); b.setAttribute('aria-selected',String(on)) });
+  const R=range(), kind=kindOf(); S.kind=kind; S.ch=CHS[kind]; S.dirty=CHS.dirty[kind];
+  S.rows=R?makeRows(D,S.ch,R.start,R.end,R.pos):[]; S.start=R?R.start:''; S.end=R?R.end:'';
+  renderStart(); renderImp(); renderOne(); renderNote(); renderCal(); renderSet(); renderDock() }
+
+/* 交番どおり:いつから・どの枠 */
+function renderStart(){ const b=$('startRow'), D=S.D; b.hidden=S.mode!=='kb'; if(b.hidden)return;
+  if(!S.pos||!P(S.day)){ b.classList.add('empty'); b.innerHTML=`<span class="t"><small>はじめに</small><span class="v">いつから・どの枠かを選ぶ</span></span><span class="act">選ぶ</span>${CHEV}`; return }
+  b.classList.remove('empty'); const q=P(S.day), v=D.kotei.find(c=>c.pos===S.pos).v, o=kroOf(D,v);
+  const tag=o?`<span class="chip">${escH(v)}行路</span>${placeOf(D,o)?`<small class="nb">${escH(placeOf(D,o))}泊</small>`:''}`:v==='-'?'<span class="chip a">明け</span>':`<span class="chip r">休み</span>`;
+  b.innerHTML=`<span class="t"><small>いつから・どの枠</small><span class="v"><span class="nb"><span class="num">${q.m}</span>月<span class="num">${q.d}</span>日（${WD[wd(S.day)]}）から</span><span class="num">${escH(S.pos)}</span>${tag}</span></span><span class="act">変える</span>${CHEV}` }
+
+/* 1日だけ:何の上で変えているか */
+function renderOne(){ const p=$('oneNote'); p.hidden=S.mode!=='one'; if(p.hidden)return;
+  const a=anchor(), base=S.kind==='kb'&&a?ph('交番どおり',`（${P(a.day).m}月${P(a.day).d}日が${a.pos}）の`,'予定に重ねてるよ。'):monthHasFree(curMon())?ph('勤務発表の','予定に重ねてるよ。'):ph('まだ何も','入っていない状態から','選ぶよ。');
+  p.innerHTML=ph('変わった日を押して、','選び直してね。')+base }
+
+/* 勤務発表:読み込む / 読み込み済み */
+function renderImp(){ const c=$('impCard'), d=$('impDone'); if(S.mode!=='free'){ c.hidden=true; d.hidden=true; return }
+  fillMonths(); const m=S.fmon||curMon(), has=monthHasFree(m), open=!has||S.impOpen;
+  c.hidden=!open; d.hidden=open;
+  $('impTitle').textContent=has?`${monLab(m)}を読み直す`:'勤務発表を読み込む';
+  if(!open)d.innerHTML=`<b class="nb">${monLab(m)}の勤務</b><span>${ph('読み込み済み。','読み直すときはここ')}</span>${CHEV}` }
+function fillMonths(){ const sel=$('impMonth'), t=P(today()), L=[]; for(let k=-1;k<=3;k++){ const d=new Date(t.y,t.m-1+k,1); L.push(`${d.getFullYear()}-${pad(d.getMonth()+1)}`) }
+  const m=S.fmon||curMon(); if(!L.includes(m))L.push(m);
+  const key=L.join(','); if(sel.dataset.k!==key){ sel.innerHTML=L.map(v=>{ const [y,mm]=v.split('-').map(Number); return `<option value="${v}">${y!==t.y?y+'年':''}${mm}月</option>` }).join(''); sel.dataset.k=key }
+  sel.value=m }
+
+/* お知らせ:直してほしい日・まだ入れてない変更 */
+function problems(){ const R=S.rows, out=[]; let lo=-1, hi=-1;
+  if(S.kind==='free')R.forEach((r,i)=>{ if(!r.blank){ if(lo<0)lo=i; hi=i } });
+  for(let i=0;i<R.length;i++){ const r=R[i];
+    if(r.todo)out.push({s:r.s,a:r.ch&&r.ch.cand?[`${r.v}は`,`${r.ch.cand.join(' か ')} の`,'どっち？']:r.v==='？'?['読めなかった枠。']:[`${r.v}は`,'データにない番号。','臨時なら、','時刻を入れてね。']});
+    else if(r.chk)out.push({s:r.s,a:['明けだった日。','前の日を変えたので、','確かめてね。']});
+    else if(r.skip&&!r.pl)out.push({s:r.s,a:[`${r.v||''}`,`（${r.skip}）`]});
+    else if(r.blank&&i>lo&&i<hi){ let j=i; while(j+1<hi&&R[j+1].blank)j++; out.push({s:r.s,e:R[j].s,a:['まだ選んでない日。']}); i=j } }
+  return out }
+const pLab=x=>x.e&&x.e!==x.s?`${P(x.s).d}〜${P(x.e).d}日`:dLab(x.s);
+function renderNote(){ const n=$('note'); if(!S.rows.length){ n.hidden=true; return }
+  const P1=problems(), seen=new Set(P1.map(x=>x.s));
+  const P2=(S.mode==='free'&&S.impIss&&S.impMon===S.fmon?S.impIss:[]).filter(x=>!seen.has(x.s)&&rowAt(x.s));
+  const dl=dirtyList();
+  if(!P1.length&&!P2.length&&!dl.length){ n.hidden=true; return }
+  let h='';
+  if(P1.length||P2.length){ h+=`<div class="hd"><span>直してほしい日</span><small>押すと直せる</small></div><ul>`+
+    P1.map(x=>`<li><button type="button" data-s="${x.s}"><b>${pLab(x)}</b><span>${ph(...x.a)}</span><em>直す ›</em></button></li>`).join('')+
+    P2.map(x=>`<li><button type="button" data-s="${x.s}"><b>${dLab(x.s)}</b><span>${ph(...x.a)}</span><em>見る ›</em></button></li>`).join('')+'</ul>' }
+  if(dl.length)h+=`<p class="dl">${ph('まだカレンダーに','入れてない変更：')}${ph(dl.map(s=>P(s).d+'日').join('・'))}</p>`;
+  n.innerHTML=h; n.hidden=false }
+
+/* ---------- 月のカレンダー ---------- */
+function monthsOf(start,end){ const a=P(start), b=P(end), months=[];
+  for(let y=a.y,m=a.m,g=0;(y<b.y||(y===b.y&&m<=b.m))&&g<15;g++){ months.push([y,m]); m++; if(m>12){ m=1; y++ } } return months }
+function rowParts(r){ if(!r)return []; const pl=r.pl;
+  if(pl){ if(pl.all)return [pl.t,'（終日）']; return [pl.t,tm(pl.tm)+'〜'+tm(pl.te)].concat(isTom(r)?['（次の日）']:[]) }
+  if(r.ake)return r._te?['明け','（退勤 '+tm(r._te)+'）']:['明け'];
+  if(r.rest)return r.ch?[r.v]:['休み','（'+r.v+'）'];
+  if(r.chk)return ['明けだった日'];
+  if(r.todo)return r.ch&&r.ch.cand?[r.v,'（'+r.ch.cand.join('か')+'？）']:[r.v,'（データにない番号）'];
+  if(r.none)return ['入れない'];
+  if(r.blank)return ['まだ選んでない'];
+  if(r.skip)return [r.v||'','（'+r.skip+'）'];
+  return [r.v||''] }
+const rowText=r=>rowParts(r).join(' ').replace(/ （/g,'（');
+function evCore(r){ const pl=r.pl, rest=$('optRest').checked;
+  if(pl&&pl.e&&pl.e!==pl.s)return `<span class="ev tom">${escH(pl.n)}<small>${tm(pl.tm)}</small></span>`;
+  if(pl&&pl.g==='休日予備')return pl.all?`<span class="ev hen">${escH(pl.t.replace(/^休日/,''))}</span>`:`<span class="ev hen">変形<small>${tm(pl.tm)}</small></span>`;
+  if(pl&&pl.all)return `<span class="ev">${escH(pl.n)}<small>終日</small></span>`;
+  if(pl)return `<span class="ev">${escH(pl.n)}<small>${tm(pl.tm)}</small></span>`;
+  if(r.ake)return r._te?`<span class="ev ake">明け<small>${tm(r._te)}</small></span>`:'<span class="ev lone">明け</span>';
+  if(r.rest)return `<span class="ev rest${rest?'':' off'}">${escH(r.ch?r.v:'休')}</span>`;
+  if(r.chk)return '<span class="ev fix">確認</span>';
+  if(r.todo)return `<span class="ev fix">${escH(r.v)}</span>`;
+  if(r.none)return '<span class="ev none">なし</span>';
+  if(r.blank)return '';
+  return `<span class="ev skip">${escH(r.v)}</span>` }
+const evHtml=r=>{ const h=evCore(r); return r.hol?h+'<span class="holm">休日出勤</span>':h };
+/* 枠で囲む日:交番どおりでは交番と違う日、ほかは、まだカレンダーに入れてない変更 */
+const ringed=r=>S.mode==='kb'?!!r.ch:!!S.dirty[r.s];
+function renderCal(){ const card=$('calCard'), rows=S.rows; card.hidden=!rows.length; if(!rows.length)return;
+  const by=new Map(rows.map(r=>[r.s,r])), months=monthsOf(S.start,S.end);
+  S.mi=Math.max(0,Math.min(S.mi,months.length-1)); const [y,m]=months[S.mi];
+  $('mTitle').innerHTML=`<span class="num">${y}</span>年<span class="num">${m}</span>月`; $('mPrev').disabled=S.mi<=0; $('mNext').disabled=S.mi>=months.length-1;
+  const rest=$('optRest').checked, nk=rows.filter(r=>r.pl).length, nr=rows.filter(r=>r.rest).length;
+  $('sum').innerHTML=`${escH(endLab())}　行路 <b>${nk}</b>${rest?`　休み <b>${nr}</b>`:''}`;
+  const first=new Date(y,m-1,1).getDay(), dim=new Date(y,m,0).getDate();
+  let h=WD.split('').map((w,i)=>`<div class="wh s${i}">${w}</div>`).join('');
+  for(let i=0;i<first;i++)h+='<div class="dd blank"></div>';
+  for(let d=1;d<=dim;d++){ const s=iso(y,m,d), w=wd(s), r=by.get(s);
+    const cls=`dd s${w}${isHol(s)?' hol':''}${!r?' out':''}${S.mode==='kb'&&s===S.start?' first':''}${r&&ringed(r)?' ch':''}`;
+    if(!r)h+=`<div class="${cls}"><span class="dn">${d}</span></div>`;
+    else h+=`<button type="button" class="${cls}" data-s="${s}" aria-label="${escH(`${m}月${d}日（${WD[w]}） ${rowText(r)}${r.hol?`（${r.hol}の日に休日出勤）`:''}${ringed(r)?'　変えた日':''}`)}"><span class="dn">${d}</span>${evHtml(r)}</button>` }
+  $('cal').innerHTML=h;
+  $('calHint').innerHTML=S.mode==='one'?ph('日を押すと、','その日を選び直せるよ'):S.kind==='free'&&!rows.some(r=>!r.blank)?ph('読み込むと、','ここに並ぶよ。','日を押して','1日ずつ選んでもいい'):ph('日を押すと、','その日だけ変えられるよ');
+  const nc=rows.filter(r=>r.ch).length, cb=$('chClear'); cb.hidden=!nc||S.mode==='one'; cb.classList.remove('warn');
+  cb.textContent=S.mode==='free'?'この期間をぜんぶ空にする':'変えた日をぜんぶ戻す' }
+function endLab(){ if(!S.end)return ''; const e=P(S.end), last=new Date(e.y,e.m,0).getDate(); return e.d===last?`${e.m}月末まで`:`${e.m}月${e.d}日まで` }
+
+/* ---------- 入れ方(設定) ---------- */
+const LEADS=[15,30,45,60,90,120,150,180];
+function fillSel(sel,list,val,lab){ const key=list.join(','); if(sel.dataset.k!==key){ sel.innerHTML=list.map(x=>`<option value="${x}">${lab(x)}</option>`).join(''); sel.dataset.k=key } sel.value=String(val) }
+function renderSet(){ const rest=$('optRest').checked;
+  const nt=NT.on?`通知 ${leadTxt(NT.base)}`+(NT.earlyOn?`（${NT.from}〜${NT.to}時台は${leadTxt(NT.early)}）`:''):'通知なし';
+  $('setSum').innerHTML=ph(...[S.mode==='one'?'':endLab()+'・',rest?'休みも入れる・':'休みは入れない・'].filter(Boolean),nt) }
+function renderSetSheet(){ const one=S.mode==='one', free=S.mode==='free'; $('rngRow').hidden=one;
+  const start=free?(S.fmon||curMon())+'-01':(S.day||today()), keys=free?['m1','m2','m3']:['m1','m2','m3','date'], cur=free?S.frng:S.rng;
+  $('rng').innerHTML=keys.map(k=>`<option value="${k}">${k==='date'?'日付で決める':P(endOf(start,k)).m+'月末まで'}</option>`).join(''); $('rng').value=cur;
+  $('untilBox').hidden=one||free||S.rng!=='date'; if(!free&&S.rng==='date')$('until').value=S.until||endOf(start,'m3');
+  fillSel($('ntBase'),LEADS,NT.base,leadTxt); fillSel($('ntEarly'),LEADS,NT.early,leadTxt);
+  fillSel($('ntFrom'),[0,1,2,3,4,5,6,7,8,9,10,11],NT.from,x=>x+'時'); fillSel($('ntTo'),[0,1,2,3,4,5,6,7,8,9,10,11],NT.to,x=>x+'時');
+  fillSel($('ntEve'),['18:00','19:00','20:00','21:00','22:00','23:00'],NT.eve,x=>x);
+  $('ntOn').checked=NT.on; $('ntEarlyOn').checked=NT.earlyOn; $('ntEveOn').checked=NT.eveOn;
+  $('ntBody').hidden=!NT.on; $('ntEarlyBox').hidden=!NT.earlyOn; $('ntEveBox').hidden=!NT.eveOn }
+
+/* ---------- 下のボタン ---------- */
+function renderDock(){ const rest=$('optRest').checked, n=evCount(S.rows,rest), dl=dirtyList(), g=$('goBtn'), g2=$('go2');
+  if(S.mode==='one'){ g.disabled=!dl.length; $('goT').textContent=dl.length?'変えた日だけ入れる':'変わった日を押してね'; $('goN').textContent=dl.length?String(dl.length):'';
+    g2.hidden=!n; g2.textContent=`ぜんぶ入れ直す（${n}件）` }
+  else{ g.disabled=!n; $('goN').textContent=n?String(n):'';
+    $('goT').textContent=n?'カレンダーに入れる':S.mode==='kb'&&!S.pos?'いつから・どの枠を選んでね':S.mode==='free'&&!S.rows.some(r=>!r.blank)?'勤務発表を読み込んでね':'入れる予定がないよ';
+    g2.hidden=!dl.length; g2.textContent=`変えた日だけ入れる（${dl.length}日）` } }
+
+/* ---------- 下から出る画面(1つずつ) ---------- */
+let layer=null, lastFocus=null;
+const BACK=['.topbar','main.wrap','#dock'];
+const setInert=on=>BACK.forEach(q=>{ const e=document.querySelector(q); if(!e)return; if(on){ e.setAttribute('inert',''); e.setAttribute('aria-hidden','true') }else{ e.removeAttribute('inert'); e.removeAttribute('aria-hidden') } });
+function openLayer(id){ if(layer&&layer!==id)$(layer).hidden=true; else lastFocus=document.activeElement; layer=id; $('scrim').hidden=false; $(id).hidden=false; document.body.classList.add('lock'); setInert(true); fitSheet(); try{ $(id).focus({preventScroll:true}) }catch(e){} }
+function closeLayer(back){ if(!layer)return; $(layer).hidden=true; layer=null; $('scrim').hidden=true; document.body.classList.remove('lock'); setInert(false); fitSheet();
+  if(back!==false){ const t=typeof back==='string'?document.querySelector(back):lastFocus; try{ t&&t.focus({preventScroll:true}) }catch(e){} } }
+/* iPhone でキーボードが出たら、下の画面をキーボードの上に持ち上げる */
+function fitSheet(){ document.querySelectorAll('.sheet').forEach(e=>{ e.style.bottom=''; e.style.maxHeight=''; e.style.height='' });
+  const d=layer&&$(layer), v=window.visualViewport; if(!d||!v)return;
+  const kb=Math.max(0,window.innerHeight-v.height-v.offsetTop); if(kb>40){ d.style.bottom=kb+'px'; d.style.maxHeight=(v.height-12)+'px'; if(d.classList.contains('tall'))d.style.height=Math.min(700,v.height-12)+'px' } }
+if(window.visualViewport){ window.visualViewport.addEventListener('resize',fitSheet); window.visualViewport.addEventListener('scroll',fitSheet) }
+
+/* ---------- いつから・どの枠 ---------- */
+function renderGrid(){ const D=S.D, T=$('kb');
+  const cols=[...new Set(D.kotei.map(c=>c.pos.split('-')[1]))].sort(), rows=[...new Set(D.kotei.map(c=>+c.pos.split('-')[0]))].sort((a,b)=>a-b);
+  const at=new Map(D.kotei.map(c=>[c.pos,c.v]));
+  let h='<thead><tr><th class="rh" scope="col"></th>'+cols.map(c=>`<th scope="col">${c}</th>`).join('')+'</tr></thead><tbody>';
+  rows.forEach(r=>{ h+=`<tr><th class="rh" scope="row">${r}</th>`;
+    cols.forEach(c=>{ const pos=r+'-'+c; if(!at.has(pos)){ h+='<td></td>'; return }
+      const v=at.get(pos), o=kroOf(D,v);
+      if(o){ const pl=o.g==='泊まり'?(o.p||''):''; h+=`<td data-pos="${pos}"><button type="button" aria-label="${pos} ${escH(v)}行路${pl?' 泊地 '+escH(pl):''}"><span class="n">${escH(v)}</span>${pl?`<span class="p">${escH(pl)}</span>`:''}</button></td>` }
+      else if(v==='-')h+=`<td class="ake" data-pos="${pos}"><button type="button" aria-label="${pos} 明け">ー</button></td>`;
+      else h+=`<td class="rest" data-pos="${pos}"><button type="button" aria-label="${pos} 休み ${escH(v)}">${escH(v).replace(/\//g,'/<wbr>')}</button></td>` });
+    h+='</tr>' });
+  T.innerHTML=h+'</tbody>' }
+let pickPos='';
+function markGrid(){ const D=S.D, C=D.kotei, N=C.length, i0=C.findIndex(c=>c.pos===pickPos), nx=new Map();
+  if(i0>=0)for(let k=1;k<=6;k++)nx.set(C[(i0+k)%N].pos,k);
+  document.querySelectorAll('#kb td[data-pos]').forEach(td=>{ const p=td.dataset.pos; td.classList.toggle('on',p===pickPos); const k=nx.get(p); td.classList.toggle('next',!!k&&p!==pickPos); const b=td.querySelector('button'); if(k)b.dataset.i=k; else delete b.dataset.i }) }
+function dayText(){ const s=$('day').value, q=P(s); $('dayText').innerHTML=q?`<span class="num">${q.m}</span>月<span class="num">${q.d}</span>日（${WD[wd(s)]}）`:'日付を選ぶ';
+  const early=q&&S.D&&S.D.from>s; $('fromNote').hidden=!early; if(early)$('fromNote').textContent=`このデータは${P(S.D.from).m}月${P(S.D.from).d}日からだよ` }
+/* 前回の続きなら、この日はこの枠 */
+function suggestPos(){ const a=anchor(), day=$('day').value; $('contNote').hidden=true; if(!a||!P(day))return;
+  const p=posAt(a,day); pickPos=p; markGrid();
+  $('contNote').innerHTML=ph(`前回（${jpDate(a.day)}に`,`${a.pos} から）の`,'続きなら、',`この日は ${p}。`,'違うときは、','枠を押して','選び直してね。'); $('contNote').hidden=false }
+function openPick(){ if(!S.D)return; $('day').value=P(S.day)?S.day:today(); pickPos=S.pos&&S.day===$('day').value?S.pos:''; $('qNum').value='';
+  dayText(); markGrid(); if(!pickPos)suggestPos(); else $('contNote').hidden=true; openLayer('pick');
+  const td=pickPos&&document.querySelector(`#kb td[data-pos="${pickPos}"]`); if(td){ const B=$('pick').querySelector('.sh-b'); B.scrollTop=Math.max(0,td.offsetTop+td.closest('.kb-box').offsetTop-B.clientHeight/2) } }
+function choosePos(pos){ S.pos=pos; S.day=$('day').value||today(); S.mi=0; S.lastBase='kb'; saveOpt(); closeLayer('#startRow'); hideDone(); update() }
+
+/* ---------- 日を押したとき ---------- */
+function groups(D){ const g=[]; D.kro.forEach(o=>{ if(!g.includes(o.g))g.push(o.g) }); return g }
+const gLabel=g=>g==='そのほか'?'そのほか':g;
+function defTab(r){ const o=r&&r.ch; if(o&&(o.k==='rest'||o.k==='none'))return 'rest'; if(o&&(o.k==='own'||o.k==='todo'&&!o.cand))return 'own'; return 'kro' }
+function syncMonth(){ const q=P(S.sel); if(!q||!S.start)return; const i=monthsOf(S.start,S.end).findIndex(([y,m])=>y===q.y&&m===q.m); if(i>=0)S.mi=i }
+const lab=(a,r)=>ph(a)+' '+phs(rowParts(r));
+function nowText(r){
+  if(r.auto)return phs(rowParts(r))+'<br>'+ph('前の日が','泊まりなので','明け');
+  if(r.chk)return ph('前の日を変えたので、','この日も','確かめてね');
+  if(r.todo)return r.ch.cand?ph(r.v,'は',r.ch.cand.join(' か ')+' の','どっち？'):ph(r.v,'は','行路データにない番号。','臨時なら、','時刻を入れてね。');
+  const hol=r.hol?'<br>'+ph(`${r.hol}の日に`,'休日出勤'):'';
+  if(S.kind==='free')return r.ch?lab('いまは',r)+hol:'まだ選んでない';
+  if(r.ch)return lab('いまは',r)+hol+'<br>'+lab('交番どおりなら',r.base);
+  return lab('交番どおり',r) }
+function ckKro(n,r){ const D=S.D, pl=plan(D,n,r.s), b=baseOf(r);
+  const cur=r.ch?(r.ch.k==='kro'&&r.ch.n===n):(!!r.pl&&!r.pl.own&&r.pl.n===n);
+  const isBase=S.kind==='kb'&&!!b&&!!b.pl&&!b.pl.own&&b.pl.n===n;
+  const sub=!pl?'<small class="j">この日はない</small>':pl.all?`<small class="j">${escH(pl.t.replace(/^休日/,''))}</small>`:`<small>${tm(pl.tm)}${isTom({pl})?'〜':''}</small>`;
+  return `<button type="button" class="ck${pl&&pl.k1&&!pl.all?' k':''}${cur?' on':''}${isBase?' base':''}" data-n="${escH(n)}"${pl?'':' disabled'} aria-label="${escH(n+' '+(pl?rowText({pl}):'この日はない'))}"><b>${escH(n)}</b>${sub}</button>` }
+function ckRest(v,r){ const cur=!!r.ch&&r.ch.k==='rest'&&r.ch.v===v; return `<button type="button" class="ck rs${cur?' on':''}" data-rest="${escH(v)}"><b class="w">${escH(v)}</b></button>` }
+function ckOwn(o,r){ const cur=sameCh(r.ch,o); return `<button type="button" class="ck${cur?' on':''}" data-own="${escH(JSON.stringify(o))}"><b class="w">${escH(o.t||'勤務')}</b><small>${o.all?'終日':tm(o.a)+'〜'+tm(o.b)}</small></button>` }
+function renderPick(r){ const D=S.D, B=$('dsBody'); let h='';
+  const cap=t=>`<p class="cap">${t}</p>`;
+  if(S.q){ const q=zen(S.q), L=D.kro.filter(o=>zen(o.n).includes(q)).sort((a,b)=>(zen(b.n).startsWith(q)?1:0)-(zen(a.n).startsWith(q)?1:0));
+    h=L.length?cap(ph(`「${S.q}」の行路`,'（時刻はこの日の出勤）'))+`<div class="cks">${L.map(o=>ckKro(o.n,r)).join('')}</div>`:`<p class="hint" style="margin-top:12px">${ph(`「${S.q}」の行路は`,'見つからなかった。','データにない行路は、','「時刻で入れる」で入れてね。')}</p>` }
+  else if(S.tab==='rest'){ const none=!!r.ch&&r.ch.k==='none';
+    h=cap('休みにする')+`<div class="cks">${RESTS.map(v=>ckRest(v,r)).join('')}</div>`+cap('カレンダーに入れない')+`<div class="cks"><button type="button" class="ck${none?' on':''}" data-none="1"><b class="w">入れない</b></button></div>` }
+  else if(S.tab==='own'){ const td=r.ch&&r.ch.k==='todo', o=r.ch&&r.ch.k==='own'?r.ch:td?{t:'臨時',a:'',b:'',all:false}:(recent().find(x=>x.k==='own')||{t:'',a:'09:00',b:'17:00',all:false});
+    const nx=rowAt(addDays(r.s,1));
+    h=(td?`<p class="hint" style="margin-top:12px">${ph(`${r.v} は`,'行路データにない番号。','臨時なら、','出勤と退勤を入れてね。')}${nx&&nx.ake?ph('次の日が明けなので、','退勤は','次の日の時刻でOK。'):''}</p>`:`<p class="hint" style="margin-top:12px">${ph('データにない勤務や、','研修・出張などを、','時刻で入れる。')}</p>`)+`<div class="own">
+      <label class="f">名前<input type="text" id="ownT" maxlength="16" placeholder="研修・出張など" value="${escH(o.t||'')}"></label>
+      <div class="tg"><span class="t">終日にする<small>時刻なしで入れる</small></span><span class="sw"><input type="checkbox" id="ownAll"${o.all?' checked':''} aria-label="終日にする"><i></i></span></div>
+      <div class="two" id="ownTimes"${o.all?' hidden':''}><label class="f">出勤<input type="time" id="ownA" value="${escH(o.a||'09:00')}"></label><label class="f">退勤<input type="time" id="ownB" value="${escH(o.b||'17:00')}"></label></div>
+      <p class="hint" id="ownNote"></p>
+      <button type="button" class="btn pri" id="ownGo">これにする</button></div>` }
+  else{ const R=recent();
+    if(R.length)h+=cap('最近')+`<div class="cks">${R.map(o=>o.k==='kro'?ckKro(o.n,r):o.k==='rest'?ckRest(o.v,r):o.k==='own'?ckOwn(o,r):'').join('')}</div>`;
+    groups(D).forEach(g=>{ h+=cap(escH(gLabel(g)))+`<div class="cks">${D.kro.filter(o=>o.g===g).map(o=>ckKro(o.n,r)).join('')}</div>` });
+    h=`<p class="hint" style="margin-top:10px">${ph('押すと決まって閉じるよ。','時刻はこの日の出勤','（赤は休日ダイヤ）。')}</p>`+h }
+  B.innerHTML=h;
+  if(S.tab==='own'&&!S.q){ const note=()=>{ const a=$('ownA').value, b=$('ownB').value, all=$('ownAll').checked; $('ownTimes').hidden=all;
+      $('ownNote').innerHTML=!all&&a&&b&&mins(b)<=mins(a)?ph('退勤が出勤と同じか','早いので、','次の日の退勤にするよ。'):'' };
+    $('ownA').oninput=note; $('ownB').oninput=note; $('ownAll').onchange=note; note() } }
+function renderSheet(){ const D=S.D, s=S.sel, r=rowAt(s); if(!D||!r){ closeLayer(); return }
+  const q=P(s); $('dsDay').innerHTML=`<span class="num">${q.m}</span>月<span class="num">${q.d}</span>日（${WD[wd(s)]}${isHol(s)?'・祝':''}）`;
+  $('dsNow').innerHTML=nowText(r)+(r.ch?`<button type="button" class="lnk" id="dsReset">${S.kind==='free'?'空にする':'交番どおりに戻す'}</button>`:'');
+  $('dsPrev').disabled=s<=S.start; $('dsNext').disabled=s>=S.end;
+  [...$('dsTabs').children].forEach(b=>{ const on=b.dataset.t===S.tab&&!S.q; b.classList.toggle('on',on); b.setAttribute('aria-selected',String(on)) });
+  renderPick(r) }
+function showOn(keep){ const B=$('dsBody'), on=B.querySelector('.ck.on'); if(on)B.scrollTop=Math.max(0,on.offsetTop-B.clientHeight/2+on.offsetHeight/2); else if(!keep)B.scrollTop=0 }
+function openSheet(s){ const r=rowAt(s); if(!r)return; S.sel=s; S.q=''; S.tab=defTab(r);
+  if(r.todo&&r.ch&&r.ch.cand){ S.q=r.ch.cand[0].replace(/[a-z]+$/i,''); S.tab='kro' } $('dsQ').value=S.q; syncMonth();
+  openLayer('ds'); renderSheet(); renderCal(); showOn() }
+function stepDay(k){ const n=addDays(S.sel,k); if(n<S.start||n>S.end)return; S.sel=n; S.q=''; $('dsQ').value=''; S.tab=defTab(rowAt(n)); syncMonth(); renderCal(); renderSheet(); showOn() }
+const closeDay=()=>{ const s=S.sel; S.sel=''; closeLayer(false); renderCal(); const b=document.querySelector(`#cal [data-s="${s}"]`); try{ b&&b.focus({preventScroll:true}) }catch(e){} };
+/* 入れかえる。交番どおりと同じ結果になるなら、入れかえを消す。休日出勤の印は残す */
+function setCh(o){ const s=S.sel, r=rowAt(s); if(!r)return;
+  const ph0=S.ch[s]&&S.ch[s].hol; if(ph0&&o.k!=='rest'&&o.k!=='none'&&!o.hol)o=Object.assign({},o,{hol:ph0});
+  let same=false;
+  if(S.kind==='kb'&&o.k==='kro'&&!o.hol){ const R=range(), t=Object.assign({},S.ch); delete t[s]; const x=makeRows(S.D,t,R.start,R.end,R.pos).find(q=>q.s===s); same=!!x&&!x.auto&&!!x.pl&&!x.pl.own&&x.pl.n===o.n }
+  if(same)delete S.ch[s]; else S.ch[s]=o;
+  S.dirty[s]=1; saveCh(); const {hol,...plain}=o; addRecent(plain); hideDone(); closeDay(); update() }
+function resetDay(){ const s=S.sel; delete S.ch[s]; S.dirty[s]=1; saveCh(); hideDone(); closeDay(); update() }
+
+/* ---------- 勤務発表から入れる ----------
+   スクショは各自のAIに読ませる。ページはAIの返事(1日1行)を受け取るだけ。どこにも送らない */
+async function copyText(t){ try{ if(navigator.clipboard&&window.isSecureContext){ await navigator.clipboard.writeText(t); return true } }catch(e){}
+  const ta=document.createElement('textarea'); ta.value=t; ta.setAttribute('readonly',''); ta.style.cssText='position:fixed;top:0;left:0;opacity:0'; document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0,t.length);
+  let ok=false; try{ ok=document.execCommand('copy') }catch(e){} ta.remove(); return ok }
+function impErr(html){ const e=$('impErr'); e.innerHTML=html; e.hidden=!html }
+function doImport(text){ const D=S.D; if(!D)return; const R=parseDuty(text||'');
+  if(!Object.keys(R.rows).length){ impErr(String(text||'').trim()?ph('読める行が','なかった。','AIの返事を','まるごと貼ってね。'):ph('貼り付けられた','文字がなかった。','先にAIの返事を','コピーしてね。')); return false }
+  let m=$('impMonth').value||curMon(); if(R.y&&R.m)m=`${R.y}-${pad(R.m)}`;
+  const [y,mm]=m.split('-').map(Number), res=readDuty(D,R,y,mm);
+  for(let d=1;d<=res.dim;d++){ delete CHS.free[iso(y,mm,d)]; delete CHS.dirty.free[iso(y,mm,d)] }
+  Object.assign(CHS.free,res.days); saveCh();
+  /* readDuty の点検のうち、カレンダーの印で分からないもの(曜日・泊まりと明け・2回あった日)を残す */
+  S.impIss=res.iss.filter(x=>x.a.some(t=>/曜日|泊まり|2回/.test(t))).map(x=>({s:iso(y,mm,x.d),a:x.a})); S.impMon=m;
+  S.fmon=m; S.frng='m1'; S.impOpen=false; S.mi=0; S.lastBase='free'; saveOpt();
+  impErr(''); $('impText').value=''; $('impHandBox').hidden=true; hideDone(); update();
+  const c=$('calCard'); if(c&&c.scrollIntoView)c.scrollIntoView({block:'start'}); return true }
+
+/* ---------- 入れる前の確認 ---------- */
+let warnNext=null;
+function openWarn(L,next){ warnNext=next; $('warnList').innerHTML=L.map(x=>`<li><button type="button" data-s="${x.s}"><b>${pLab(x)}</b><span>${ph(...x.a)}</span><em>直す ›</em></button></li>`).join('');
+  $('warnT').textContent=`まだ直してない日が${L.length}つあるよ`; openLayer('warn') }
+
+/* ---------- カレンダー用ファイル ---------- */
+/* その日を変えたことで、次の日も変わったとき(泊まりにした・泊まりをやめた)のひとこと */
+function nextNote(days){ const out=[];
+  days.forEach(s=>{ const r=rowAt(s), n=rowAt(addDays(s,1)); if(isTom(r)&&n&&n.ake&&!days.includes(n.s))out.push(['明け',n.s]); else if(n&&n.chk)out.push(['確認',n.s]) });
+  const a=out.filter(x=>x[0]==='明け').map(x=>P(x[1]).d+'日'), c=out.filter(x=>x[0]==='確認').map(x=>P(x[1]).d+'日');
+  return (a.length?ph(`${a.join('・')}は`,'明けになるよ。','前の予定が','入っていたら、','それも消してね。'):'')+(c.length?ph(`${c.join('・')}も`,'確かめてね。'):'') }
+function hand(r,name){ const blob=new Blob([r.text],{type:'text/calendar;charset=utf-8'}), url=URL.createObjectURL(blob);
+  if(isIOS()){ const w=window.open(url,'_blank'); if(!w)location.href=url }
+  else{ const a=document.createElement('a'); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove() }
+  setTimeout(()=>URL.revokeObjectURL(url),60000) }
+function showDone(html){ const d=$('done'); d.innerHTML=html; d.hidden=!html }
+const hideDone=()=>showDone('');
+function goAll(){ const D=S.D; if(!D||!S.rows.length)return; const rest=$('optRest').checked, r=ics(D,S.rows,{rest}); if(!r.n)return;
+  const name=`行路_${md(S.start).replace('/','-')}から.ics`; hand(r,name);
+  S.rows.forEach(x=>{ delete S.dirty[x.s] }); saveCh();
+  if(S.kind==='kb'&&!S.sample&&S.mode==='kb')LS.set(KEY_LAST,JSON.stringify({from:D.from,day:S.day,pos:S.pos}));
+  if(S.mode!=='one'){ S.lastBase=S.kind; saveOpt() }
+  update();
+  showDone(isIOS()?ph(`${r.n}件の予定を`,'作ったよ。','一覧が出たら、','右上の「すべて追加」で、','入れるカレンダー','（「行路」など）を','選んでね。','出ないときは、','Safari で','開き直してから','押してね。')
+    :ph(`${r.n}件の予定を`,`「${name}」に`,'保存したよ。','開くと、','カレンダーに','入れられる。')) }
+function goDirty(){ const D=S.D, days=dirtyList(); if(!D||!days.length)return;
+  const rows=S.rows.filter(x=>days.includes(x.s)), r=ics(D,rows,{rest:true}), lab=days.map(s=>P(s).d+'日').join('・'), extra=nextNote(days);
+  if(r.n){ const name=`行路_変えた日_${md(days[0]).replace('/','-')}.ics`; hand(r,name);
+    showDone(ph(`${lab}の予定を`,'作ったよ。')+(isIOS()?ph('出てきた画面で、','カレンダーを','「行路」にして','追加してね。'):ph(`「${name}」を`,'開いて入れてね。'))+ph('前に入れていた',`${lab}の予定は`,'自動では消えないので、','カレンダーのアプリで','消してね。')+extra) }
+  else showDone(ph(`${lab}は`,'入れる予定がないよ。','前に入れていた予定が','あれば、','カレンダーのアプリで','消してね。')+extra);
+  days.forEach(s=>{ delete S.dirty[s] }); saveCh(); update() }
+function tryGo(kind){ const all=problems(), days=dirtyList();
+  const L=kind==='all'?all:all.filter(x=>days.some(s=>s===x.s||addDays(s,1)===x.s));
+  const run=kind==='all'?goAll:goDirty; if(L.length){ openWarn(L,run); return } run() }
+
+/* ---------- つなぐ ---------- */
+if(/\bLine\//i.test(navigator.userAgent))$('lineNote').hidden=false;
+const openFile=()=>{ $('file').value=''; $('file').click() };
+$('pickBtn').onclick=openFile; $('dataBtn').onclick=openFile;
+$('sampleBtn').onclick=()=>setData(JSON.parse(JSON.stringify(SAMPLE)),true);
+$('file').onchange=async()=>{ const f=$('file').files[0]; if(!f)return; let D=null; try{ D=JSON.parse(await f.text()) }catch(e){ D=null }
+  if(!okData(D)){ const m=ph('行路データとして','読めなかった。','グループに流れてる','行路データ（.json）を','選んでね。'); if(S.D){ showDone(m); return } $('dataErr').innerHTML=m; $('dataErr').hidden=false; return }
+  setData(D,false) };
+const setMode=m=>{ S.mode=m; if(m==='kb'||m==='free')S.lastBase=m; S.mi=0; S.impOpen=false; saveOpt(); hideDone(); update(); window.scrollTo(0,0);
+  if(m==='kb'&&!S.pos)openPick() };
+$('choose').onclick=e=>{ const b=e.target.closest('button[data-m]'); if(b)setMode(b.dataset.m) };
+$('modeSeg').onclick=e=>{ const b=e.target.closest('button[data-m]'); if(b&&b.dataset.m!==S.mode)setMode(b.dataset.m) };
+$('startRow').onclick=openPick;
+$('pickClose').onclick=()=>closeLayer();
+$('day').onchange=()=>{ dayText(); suggestPos() };
+$('day').onclick=e=>{ try{ e.target.showPicker&&e.target.showPicker() }catch(x){} };
+$('qNum').oninput=()=>{ const q=$('qNum').value.trim().replace(/[０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0)); if(!S.D||!q)return;
+  const c=S.D.kotei.find(x=>x.v===q); if(c){ pickPos=c.pos; markGrid(); $('contNote').innerHTML=ph(`${q}行路は ${c.pos}。`,'押すと決まるよ。'); $('contNote').hidden=false; const td=document.querySelector(`#kb td[data-pos="${c.pos}"]`); if(td&&td.scrollIntoView)td.scrollIntoView({block:'nearest'}) } };
+$('kb').onclick=e=>{ const td=e.target.closest('td[data-pos]'); if(td)choosePos(td.dataset.pos) };
+$('cal').onclick=e=>{ const b=e.target.closest('button[data-s]'); if(b)openSheet(b.dataset.s) };
+$('mPrev').onclick=()=>{ S.mi--; renderCal() }; $('mNext').onclick=()=>{ S.mi++; renderCal() };
+$('note').onclick=e=>{ const b=e.target.closest('button[data-s]'); if(b)openSheet(b.dataset.s) };
+$('dsClose').onclick=closeDay; $('dsPrev').onclick=()=>stepDay(-1); $('dsNext').onclick=()=>stepDay(1);
+$('dsTabs').onclick=e=>{ const b=e.target.closest('button[data-t]'); if(!b)return; S.tab=b.dataset.t; S.q=''; $('dsQ').value=''; renderSheet(); showOn() };
+$('dsQ').oninput=()=>{ S.q=$('dsQ').value.trim(); renderSheet(); $('dsBody').scrollTop=0 };
+$('dsNow').onclick=e=>{ if(e.target.id==='dsReset')resetDay() };
+$('dsBody').onclick=e=>{ const b=e.target.closest('button'); if(!b||b.disabled)return;
+  if(b.dataset.n!=null)setCh({k:'kro',n:b.dataset.n});
+  else if(b.dataset.rest)setCh({k:'rest',v:b.dataset.rest});
+  else if(b.dataset.none)setCh({k:'none'});
+  else if(b.dataset.own){ let o=null; try{ o=JSON.parse(b.dataset.own) }catch(x){} if(o&&o.k==='own')setCh(o) }
+  else if(b.id==='ownGo'){ const all=$('ownAll').checked, a=$('ownA').value, z=$('ownB').value;
+    if(!all&&(!a||!z)){ $('ownNote').innerHTML=ph('出勤と退勤の','時刻を入れてね。'); return }
+    const o={k:'own',t:$('ownT').value.trim()}; if(all)o.all=true; else{ o.a=a; o.b=z } setCh(o) } };
+$('setRow').onclick=()=>{ renderSetSheet(); openLayer('set') };
+$('setClose').onclick=()=>closeLayer();
+$('rng').onchange=e=>{ if(S.mode==='free')S.frng=e.target.value; else{ S.rng=e.target.value; if(S.rng==='date'&&!S.until)S.until=endOf(S.day||today(),'m3') } S.mi=0; saveOpt(); renderSetSheet(); update() };
+$('until').onchange=e=>{ S.until=e.target.value; saveOpt(); update() };
+$('optRest').onchange=()=>{ saveOpt(); update() };
+const ntSet=(k,v)=>{ NT[k]=v; if(NT.to<NT.from)NT.to=NT.from; saveOpt(); renderSetSheet(); update() };
+$('ntOn').onchange=e=>ntSet('on',e.target.checked); $('ntEarlyOn').onchange=e=>ntSet('earlyOn',e.target.checked); $('ntEveOn').onchange=e=>ntSet('eveOn',e.target.checked);
+$('ntBase').onchange=e=>ntSet('base',+e.target.value); $('ntEarly').onchange=e=>ntSet('early',+e.target.value);
+$('ntFrom').onchange=e=>ntSet('from',+e.target.value); $('ntTo').onchange=e=>ntSet('to',+e.target.value); $('ntEve').onchange=e=>ntSet('eve',e.target.value);
+/* 勤務発表 */
+$('impMonth').onchange=e=>{ S.fmon=e.target.value; S.mi=0; saveOpt(); update() };
+$('impCopy').onclick=async()=>{ const b=$('impCopy'), ok=await copyText(ASK); b.textContent=ok?'コピーしたよ':'コピーできなかった'; setTimeout(()=>{ b.textContent='お願い文をコピー' },2200) };
+$('impPaste').onclick=async()=>{ let t=null; try{ if(navigator.clipboard&&navigator.clipboard.readText)t=await navigator.clipboard.readText() }catch(e){ t=null }
+  if(t==null){ $('impHandBox').hidden=false; impErr(ph('ここでは','貼り付けられなかった。','下の欄を長押しして','「ペースト」してから、','「読み込む」を押してね。')); return }
+  doImport(t) };
+$('impHand').onclick=()=>{ const b=$('impHandBox'); b.hidden=!b.hidden; if(!b.hidden)$('impText').focus() };
+$('impRead').onclick=()=>doImport($('impText').value);
+$('impDone').onclick=()=>{ S.impOpen=true; update() };
+/* ぜんぶ戻す(押し間違えないよう、2回押す) */
+let clrT=0;
+$('chClear').onclick=()=>{ const b=$('chClear');
+  if(!b.classList.contains('warn')){ b.classList.add('warn'); b.textContent='もう一度押すと戻すよ'; clearTimeout(clrT); clrT=setTimeout(()=>renderCal(),4000); return }
+  clearTimeout(clrT); S.rows.forEach(r=>{ if(S.ch[r.s]){ delete S.ch[r.s]; S.dirty[r.s]=1 } }); saveCh(); hideDone(); update() };
+/* 入れる */
+$('goBtn').onclick=()=>tryGo(S.mode==='one'?'dirty':'all');
+$('go2').onclick=()=>tryGo(S.mode==='one'?'all':'dirty');
+$('warnClose').onclick=()=>closeLayer();
+$('warnGo').onclick=()=>{ const f=warnNext; closeLayer(); if(f)f() };
+$('warnFix').onclick=()=>{ const b=$('warnList').querySelector('button[data-s]'); closeLayer(false); if(b)openSheet(b.dataset.s) };
+$('warnList').onclick=e=>{ const b=e.target.closest('button[data-s]'); if(!b)return; closeLayer(false); openSheet(b.dataset.s) };
+$('scrim').onclick=()=>{ if(layer==='ds')closeDay(); else closeLayer() };
+document.addEventListener('keydown',e=>{ if(e.key!=='Escape'||!layer)return; if(e.target===$('dsQ')&&$('dsQ').value){ $('dsQ').value=''; S.q=''; renderSheet(); return } if(layer==='ds')closeDay(); else closeLayer() });
+/* 2回目からは、覚えているデータで開く */
+(function(){ let D=null; try{ D=JSON.parse(LS.get(KEY)||'null') }catch(e){ D=null } if(okData(D))setData(D,false); else update() })();
+window.__kouro={build,plan,ics,isKyu,holidays,endOf,applyCh,blankRows,ownPlan,makeRows,parseDuty,mapTok,readDuty,ASK,S,setData,update,openSheet,setMode,problems,CHS:()=>CHS,NT:()=>NT};
+})();
+</script>
+</body>
+</html>
