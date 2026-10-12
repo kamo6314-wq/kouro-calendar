@@ -10,7 +10,7 @@
 <meta name="theme-color" content="#171513" media="(prefers-color-scheme: dark)">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" media="print" onload="this.media='all'">
 <style>
 /* 道具の作法:暖かい灰の台、白い入れ物(角丸14)、操作(角丸8〜10)、切りかえは丸、黒い主ボタン、細い区切り線。
    色の意味は1つずつ:緑=行路、赤=休み、橙(黄)=休日変形、焦げ茶(アクセント)=変えた日・直す日。飾りの図形は使わない */
@@ -520,14 +520,19 @@ function holidays(y){
     if(t.getFullYear()===y)H.set(at(t),'振替休日') });
   HOL.set(y,H); return H }
 /* その日が休日ダイヤか(土日・祝日・年末年始) */
-function isKyu(s,D){ const q=P(s), w=wd(s); if(w===0||w===6)return true; if(holidays(q.y).has(q.m+'-'+q.d))return true;
-  const ex=Array.isArray(D&&D.kyuExtra)?D.kyuExtra:['12-30','12-31','1-1','1-2','1-3']; return ex.includes(q.m+'-'+q.d) }
+const KYU=new WeakMap(), KYU0=new Map();
+function isKyu(s,D){ const c=D&&typeof D==='object'?(KYU.get(D)||KYU.set(D,new Map()).get(D)):KYU0; let v=c.get(s); if(v!==undefined)return v;
+  const q=P(s), w=wd(s); if(w===0||w===6||holidays(q.y).has(q.m+'-'+q.d))v=true;
+  else{ const ex=Array.isArray(D&&D.kyuExtra)?D.kyuExtra:['12-30','12-31','1-1','1-2','1-3']; v=ex.includes(q.m+'-'+q.d) }
+  c.set(s,v); return v }
 const isHol=s=>{ const q=P(s); return holidays(q.y).has(q.m+'-'+q.d) };
 
 /* ---------- 行路データ ---------- */
 function okData(D){ return !!(D&&D.type==='gencan-kro'&&Array.isArray(D.kro)&&D.kro.length&&/^\d{4}-\d{2}-\d{2}$/.test(String(D.from||''))&&Array.isArray(D.kotei)&&D.kotei.length) }
 const isRestV=v=>/[公特ヨ休]/.test(String(v||''));
-const kroOf=(D,n)=>D.kro.find(x=>x.n===n);
+const KIX=new WeakMap();
+function kix(D){ let x=KIX.get(D); if(!x){ x={by:new Map(),zen:new Map(),zl:[]}; D.kro.forEach(o=>{ const z=zen(o.n); if(!x.by.has(o.n))x.by.set(o.n,o); if(!x.zen.has(z))x.zen.set(z,o); x.zl.push([z,o]) }); KIX.set(D,x) } return x }
+const kroOf=(D,n)=>kix(D).by.get(n);
 /* 行路を、その日の予定にする(平日か休日かで時刻を選ぶ) */
 function plan(D,n,s){ const o=kroOf(D,n); if(!o)return null; const k1=isKyu(s,D);
   if(o.g==='泊まり'){ const s2=addDays(s,1), k2=isKyu(s2,D), a=k1?o.k:o.h, b=k2?o.k:o.h; if(!Array.isArray(a)||!Array.isArray(b))return null;
@@ -582,22 +587,24 @@ function applyCh(D,rows,ch){
   return rows }
 /* 入れかえは、このスマホに覚えておく(行路データの改正ごと)。2か月より前の日は捨てる */
 /* 「交番から」と「1日ずつ」は別々に覚える。改正ごとにも分ける(改正の前後で両方のデータを使う人がいるため) */
-let CHS={kb:{},free:{},dirty:{kb:{},free:{}}};
+let CHS={kb:{},free:{},dirty:{kb:{},free:{}}}, CHALL=null;
 const isObj=x=>!!x&&typeof x==='object'&&!Array.isArray(x);
 /* dirty は、まだカレンダーに入れていない変更(日付ごと)。「変えた日だけ入れる」で使う */
+function loadAll(){ if(!CHALL){ try{ CHALL=JSON.parse(LS.get(KEY_CH)||'null') }catch(e){ CHALL=null } if(!isObj(CHALL)||!isObj(CHALL.by))CHALL={v:2,by:{}} } return CHALL }
 function loadCh(D){ CHS={kb:{},free:{},dirty:{kb:{},free:{}}};
-  if(!S.sample){ try{ const o=JSON.parse(LS.get(KEY_CH)||'null'), e=o&&isObj(o.by)&&o.by[D.from]; if(isObj(e)){ if(isObj(e.kb))CHS.kb=e.kb; if(isObj(e.free))CHS.free=e.free;
+  if(!S.sample){ try{ const o=loadAll(), e=o.by[D.from]; if(isObj(e)){ if(isObj(e.kb))CHS.kb=e.kb; if(isObj(e.free))CHS.free=e.free;
     if(isObj(e.dirty)){ if(isObj(e.dirty.kb))CHS.dirty.kb=e.dirty.kb; if(isObj(e.dirty.free))CHS.dirty.free=e.dirty.free } } }catch(e){} } }
 function saveCh(){ if(S.sample||!S.D)return; const lim=addDays(today(),-62);
   [CHS.kb,CHS.free,CHS.dirty.kb,CHS.dirty.free].forEach(m=>Object.keys(m).forEach(k=>{ if(k<lim)delete m[k] }));
-  let o=null; try{ o=JSON.parse(LS.get(KEY_CH)||'null') }catch(e){ o=null } if(!isObj(o)||!isObj(o.by))o={v:2,by:{}};
+  const o=loadAll();
   o.by[S.D.from]={kb:CHS.kb,free:CHS.free,dirty:CHS.dirty};
   const ks=Object.keys(o.by).filter(k=>k!==S.D.from).sort(); while(ks.length>2)delete o.by[ks.shift()];
   LS.set(KEY_CH,JSON.stringify(o)) }
 /* 最近えらんだもの(すぐ選べるように) */
-function recent(){ let a=[]; try{ a=JSON.parse(LS.get(KEY_REC)||'[]') }catch(e){ a=[] } if(!Array.isArray(a))return [];
-  return a.filter(o=>o&&(o.k==='rest'&&RESTS.includes(o.v)||o.k==='own'||o.k==='kro'&&S.D&&kroOf(S.D,o.n))) }
-function addRecent(o){ if(o.k==='none'||S.sample)return; const key=JSON.stringify(o); const a=[o].concat(recent().filter(x=>JSON.stringify(x)!==key)).slice(0,8); LS.set(KEY_REC,JSON.stringify(a)) }
+let REC=null;
+function recent(){ if(!REC){ try{ REC=JSON.parse(LS.get(KEY_REC)||'[]') }catch(e){ REC=[] } if(!Array.isArray(REC))REC=[] }
+  return REC.filter(o=>o&&(o.k==='rest'&&RESTS.includes(o.v)||o.k==='own'||o.k==='kro'&&S.D&&kroOf(S.D,o.n))) }
+function addRecent(o){ if(o.k==='none'||S.sample)return; const key=JSON.stringify(o); REC=[o].concat(recent().filter(x=>JSON.stringify(x)!==key)).slice(0,8); LS.set(KEY_REC,JSON.stringify(REC)) }
 const sameCh=(a,b)=>!!a&&!!b&&JSON.stringify(a)===JSON.stringify(b);
 /* 前の日から作って、前の日の泊まりや入れかえが、範囲の1日目にも効くようにする。前の日は返さない */
 function makeRows(D,ch,start,end,pos){ const pv=addDays(start,-1); let rows;
@@ -614,8 +621,9 @@ const durOf=n=>'-PT'+(Math.floor(n/60)?Math.floor(n/60)+'H':'')+(n%60?n%60+'M':'
 
 /* ---------- カレンダー用ファイル(.ics) ---------- */
 const esc=s=>String(s||'').replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\r?\n/g,'\\n');
-function fold(line){ const enc=new TextEncoder(); if(enc.encode(line).length<=75)return line; const out=[]; let cur='', n=0;
-  for(const ch of line){ const b=enc.encode(ch).length; if(n+b>(out.length?74:75)){ out.push(cur); cur=''; n=0 } cur+=ch; n+=b } out.push(cur); return out.join('\r\n ') }
+const u8=ch=>{ const c=ch.codePointAt(0); return c<0x80?1:c<0x800?2:c<0x10000?3:4 };
+function fold(line){ if(line.length<=25)return line; let all=0; for(const ch of line)all+=u8(ch); if(all<=75)return line; const out=[]; let cur='', n=0;
+  for(const ch of line){ const b=u8(ch); if(n+b>(out.length?74:75)){ out.push(cur); cur=''; n=0 } cur+=ch; n+=b } out.push(cur); return out.join('\r\n ') }
 function utc(s,t){ const q=P(s), [h,mi]=String(t||'00:00').split(':').map(Number); const d=new Date(Date.UTC(q.y,q.m-1,q.d,h-9,mi)); return `${d.getUTCFullYear()}${pad(d.getUTCMonth()+1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}00Z` }
 const dt=s=>String(s).replace(/-/g,'');
 /* 予定のUIDは、日付と中身から作る。同じ中身なら同じUID。中身が変わった日は、別の予定として入る(iPhone は同じUIDの予定を置きかえないため) */
@@ -661,11 +669,11 @@ const isDash=x=>/^[ー－―‐\-—–─━〜~_]+$/.test(x);
 function mapTok(D,tok){ const x=ZEN(tok).trim().replace(/^[「『"'【]+|[」』"'】]+$/g,''); if(!x)return null;
   if(isDash(x))return {k:'ake'};
   if(/^[?？]+$/.test(x))return {k:'todo',code:'？'};
-  const hit=D.kro.find(o=>zen(o.n)===zen(x)); if(hit)return {k:'kro',n:hit.n};
+  const X=kix(D), hit=X.zen.get(zen(x)); if(hit)return {k:'kro',n:hit.n};
   if(/休/.test(x))return {k:'rest',v:x};
   const m=/^([A-Za-z]{0,2})\s*0*(\d{1,5})\s*([A-Za-z]?)$/.exec(x);
-  if(m){ const num=m[2], suf=m[3].toLowerCase(), ex=D.kro.find(o=>zen(o.n)===num+suf); if(ex)return {k:'kro',n:ex.n};
-    if(!suf){ const cand=D.kro.filter(o=>{ const z=zen(o.n); return z.length===num.length+1&&z.startsWith(num)&&/[a-z]$/.test(z) }).map(o=>o.n);
+  if(m){ const num=m[2], suf=m[3].toLowerCase(), ex=X.zen.get(num+suf); if(ex)return {k:'kro',n:ex.n};
+    if(!suf){ const cand=X.zl.filter(([z])=>z.length===num.length+1&&z.startsWith(num)&&/[a-z]$/.test(z)).map(([,o])=>o.n);
       if(cand.length===1)return {k:'kro',n:cand[0]}; if(cand.length>1)return {k:'todo',code:x,cand} } }
   return {k:'todo',code:x} }
 /* AIの返事を読む。1日1行(「1(木) 1005」「10/1 1005」「1日 木 1005」など)。JSONで返ってきても読む */
@@ -725,10 +733,12 @@ const dLab=s=>`${P(s).d}日（${WD[wd(s)]}）`;
 const CHEV='<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>';
 
 /* ---------- どの記録・どの並びを使うか ---------- */
+let LAST;
+function lastRec(){ if(LAST===undefined){ try{ LAST=JSON.parse(LS.get(KEY_LAST)||'null') }catch(e){ LAST=null } } return LAST }
 /* 前回の続き(交番の枠):いま選んでいる枠、なければ前にカレンダーへ入れたときの枠 */
 function anchor(){ const D=S.D; if(!D)return null; const ok=p=>D.kotei.some(c=>c.pos===p);
   if(S.pos&&P(S.day)&&ok(S.pos))return {day:S.day,pos:S.pos};
-  let L=null; try{ L=JSON.parse(LS.get(KEY_LAST)||'null') }catch(e){ L=null }
+  const L=lastRec();
   if(!S.sample&&L&&L.from===D.from&&P(L.day)&&ok(L.pos))return {day:L.day,pos:L.pos};
   return null }
 function posAt(a,day){ const C=S.D.kotei, N=C.length, i0=C.findIndex(c=>c.pos===a.pos), off=diffDays(a.day,day); return C[((i0+off)%N+N)%N].pos }
@@ -740,22 +750,23 @@ function range(){
   const q=P(today()), start=iso(q.y,q.m,1), end=endOf(start,'m2');
   if(kindOf()==='kb'){ const a=anchor(); return {start,end,pos:posAt(a,start)} }
   return {start,end,pos:''} }
-const rowAt=s=>S.rows.find(r=>r.s===s);
+let RI=null, RIof=null;
+const rowAt=s=>{ if(RIof!==S.rows){ RI=new Map(S.rows.map(r=>[r.s,r])); RIof=S.rows } return RI.get(s) };
 const baseOf=r=>r&&(r.ch||r.auto)?r.base:r;
 const dirtyList=()=>S.rows.filter(r=>S.dirty[r.s]).map(r=>r.s);
 const evCount=(rows,rest)=>rows.filter(r=>r.pl||(rest&&(r.rest||r.ake&&r.hol))).length;
 function monthHasFree(m){ return Object.keys(CHS.free).some(k=>k.slice(0,7)===m) }
 
 /* ---------- データ ---------- */
-function setData(D,sample){ S.D=D; S.sample=!!sample; S.pos=''; S.day=''; S.mi=0; S.impIss=null;
-  if(!sample)LS.set(KEY,JSON.stringify(D));
+function setData(D,sample,stored){ S.D=D; S.sample=!!sample; S.pos=''; S.day=''; S.mi=0; S.impIss=null;
+  if(!sample&&!stored)LS.set(KEY,JSON.stringify(D));
   loadCh(D);
   if(!sample&&OPT.kbFrom===D.from&&D.kotei.some(c=>c.pos===OPT.kbPos)&&P(OPT.kbDay)){ S.day=OPT.kbDay; S.pos=OPT.kbPos }
   if(sample){ S.day=today(); S.pos='1-B' }
   S.fmon=/^\d{4}-\d{2}$/.test(OPT.fmon||'')?OPT.fmon:curMon();
   $('dataErr').hidden=true; $('dataBtn').hidden=false;
   $('dataLine').innerHTML=`${escH(D.name||'行路データ')}${S.sample?'<span class="tag">見本</span>':''}　${escH(jpDate(D.from))}${escH(D.rev||'改正')}`;
-  renderGrid(); update() }
+  update() }
 
 /* ---------- 画面全体 ---------- */
 function update(){ const D=S.D;
@@ -887,17 +898,23 @@ function renderDock(){ const rest=$('optRest').checked, n=evCount(S.rows,rest), 
 let layer=null, lastFocus=null;
 const BACK=['.topbar','main.wrap','#dock'];
 const setInert=on=>BACK.forEach(q=>{ const e=document.querySelector(q); if(!e)return; if(on){ e.setAttribute('inert',''); e.setAttribute('aria-hidden','true') }else{ e.removeAttribute('inert'); e.removeAttribute('aria-hidden') } });
-function openLayer(id){ if(layer&&layer!==id)$(layer).hidden=true; else lastFocus=document.activeElement; layer=id; $('scrim').hidden=false; $(id).hidden=false; document.body.classList.add('lock'); setInert(true); fitSheet(); try{ $(id).focus({preventScroll:true}) }catch(e){} }
-function closeLayer(back){ if(!layer)return; $(layer).hidden=true; layer=null; $('scrim').hidden=true; document.body.classList.remove('lock'); setInert(false); fitSheet();
+function openLayer(id){ if(layer&&layer!==id){ $(layer).hidden=true; unfit() } else if(!layer){ lastFocus=document.activeElement; $('scrim').hidden=false; document.body.classList.add('lock'); setInert(true) }
+  layer=id; $(id).hidden=false; try{ $(id).focus({preventScroll:true}) }catch(e){} requestAnimationFrame(fitSheet) }
+function closeLayer(back){ if(!layer)return; $(layer).hidden=true; layer=null; $('scrim').hidden=true; document.body.classList.remove('lock'); setInert(false); unfit();
   if(back!==false){ const t=typeof back==='string'?document.querySelector(back):lastFocus; try{ t&&t.focus({preventScroll:true}) }catch(e){} } }
 /* iPhone でキーボードが出たら、下の画面をキーボードの上に持ち上げる */
-function fitSheet(){ document.querySelectorAll('.sheet').forEach(e=>{ e.style.bottom=''; e.style.maxHeight=''; e.style.height='' });
-  const d=layer&&$(layer), v=window.visualViewport; if(!d||!v)return;
-  const kb=Math.max(0,window.innerHeight-v.height-v.offsetTop); if(kb>40){ d.style.bottom=kb+'px'; d.style.maxHeight=(v.height-12)+'px'; if(d.classList.contains('tall'))d.style.height=Math.min(700,v.height-12)+'px' } }
+/* 先に読んでから書く。変わらないときは書かない(配置の計算をくり返さないため) */
+let fitEl=null, fitKey='';
+function unfit(){ if(fitEl){ fitEl.style.bottom=''; fitEl.style.maxHeight=''; fitEl.style.height='' } fitEl=null; fitKey='' }
+function fitSheet(){ const d=layer&&$(layer), v=window.visualViewport; if(!d||!v){ unfit(); return }
+  const kb=Math.max(0,window.innerHeight-v.height-v.offsetTop), key=kb>40?kb+'/'+v.height:'';
+  if(fitEl===d&&fitKey===key)return; unfit(); if(!key)return;
+  fitEl=d; fitKey=key; d.style.bottom=kb+'px'; d.style.maxHeight=(v.height-12)+'px'; if(d.classList.contains('tall'))d.style.height=Math.min(700,v.height-12)+'px' }
 if(window.visualViewport){ window.visualViewport.addEventListener('resize',fitSheet); window.visualViewport.addEventListener('scroll',fitSheet) }
 
 /* ---------- いつから・どの枠 ---------- */
-function renderGrid(){ const D=S.D, T=$('kb');
+let gridOf=null;
+function renderGrid(){ const D=S.D, T=$('kb'); if(gridOf===D)return; gridOf=D;
   const cols=[...new Set(D.kotei.map(c=>c.pos.split('-')[1]))].sort(), rows=[...new Set(D.kotei.map(c=>+c.pos.split('-')[0]))].sort((a,b)=>a-b);
   const at=new Map(D.kotei.map(c=>[c.pos,c.v]));
   let h='<thead><tr><th class="rh" scope="col"></th>'+cols.map(c=>`<th scope="col">${c}</th>`).join('')+'</tr></thead><tbody>';
@@ -919,7 +936,7 @@ function dayText(){ const s=$('day').value, q=P(s); $('dayText').innerHTML=q?`<s
 function suggestPos(){ const a=anchor(), day=$('day').value; $('contNote').hidden=true; if(!a||!P(day))return;
   const p=posAt(a,day); pickPos=p; markGrid();
   $('contNote').innerHTML=ph(`前回（${jpDate(a.day)}に`,`${a.pos} から）の`,'続きなら、',`この日は ${p}。`,'違うときは、','枠を押して','選び直してね。'); $('contNote').hidden=false }
-function openPick(){ if(!S.D)return; $('day').value=P(S.day)?S.day:today(); pickPos=S.pos&&S.day===$('day').value?S.pos:''; $('qNum').value='';
+function openPick(){ if(!S.D)return; renderGrid(); $('day').value=P(S.day)?S.day:today(); pickPos=S.pos&&S.day===$('day').value?S.pos:''; $('qNum').value='';
   dayText(); markGrid(); if(!pickPos)suggestPos(); else $('contNote').hidden=true; openLayer('pick');
   const td=pickPos&&document.querySelector(`#kb td[data-pos="${pickPos}"]`); if(td){ const B=$('pick').querySelector('.sh-b'); B.scrollTop=Math.max(0,td.offsetTop+td.closest('.kb-box').offsetTop-B.clientHeight/2) } }
 function choosePos(pos){ S.pos=pos; S.day=$('day').value||today(); S.mi=0; S.lastBase='kb'; saveOpt(); closeLayer('#startRow'); hideDone(); update() }
@@ -928,7 +945,7 @@ function choosePos(pos){ S.pos=pos; S.day=$('day').value||today(); S.mi=0; S.las
 function groups(D){ const g=[]; D.kro.forEach(o=>{ if(!g.includes(o.g))g.push(o.g) }); return g }
 const gLabel=g=>g==='そのほか'?'そのほか':g;
 function defTab(r){ const o=r&&r.ch; if(o&&(o.k==='rest'||o.k==='none'))return 'rest'; if(o&&(o.k==='own'||o.k==='todo'&&!o.cand))return 'own'; return 'kro' }
-function syncMonth(){ const q=P(S.sel); if(!q||!S.start)return; const i=monthsOf(S.start,S.end).findIndex(([y,m])=>y===q.y&&m===q.m); if(i>=0)S.mi=i }
+function syncMonth(){ const q=P(S.sel); if(!q||!S.start)return false; const i=monthsOf(S.start,S.end).findIndex(([y,m])=>y===q.y&&m===q.m); if(i>=0&&i!==S.mi){ S.mi=i; return true } return false }
 const lab=(a,r)=>ph(a)+' '+phs(rowParts(r));
 function nowText(r){
   if(r.auto)return phs(rowParts(r))+'<br>'+ph('前の日が','泊まりなので','明け');
@@ -975,18 +992,19 @@ function renderSheet(){ const D=S.D, s=S.sel, r=rowAt(s); if(!D||!r){ closeLayer
   renderPick(r) }
 function showOn(keep){ const B=$('dsBody'), on=B.querySelector('.ck.on'); if(on)B.scrollTop=Math.max(0,on.offsetTop-B.clientHeight/2+on.offsetHeight/2); else if(!keep)B.scrollTop=0 }
 function openSheet(s){ const r=rowAt(s); if(!r)return; S.sel=s; S.q=''; S.tab=defTab(r);
-  if(r.todo&&r.ch&&r.ch.cand){ S.q=r.ch.cand[0].replace(/[a-z]+$/i,''); S.tab='kro' } $('dsQ').value=S.q; syncMonth();
-  openLayer('ds'); renderSheet(); renderCal(); showOn() }
-function stepDay(k){ const n=addDays(S.sel,k); if(n<S.start||n>S.end)return; S.sel=n; S.q=''; $('dsQ').value=''; S.tab=defTab(rowAt(n)); syncMonth(); renderCal(); renderSheet(); showOn() }
-const closeDay=()=>{ const s=S.sel; S.sel=''; closeLayer(false); renderCal(); const b=document.querySelector(`#cal [data-s="${s}"]`); try{ b&&b.focus({preventScroll:true}) }catch(e){} };
+  if(r.todo&&r.ch&&r.ch.cand){ S.q=r.ch.cand[0].replace(/[a-z]+$/i,''); S.tab='kro' } $('dsQ').value=S.q;
+  if(syncMonth())renderCal(); renderSheet(); openLayer('ds'); showOn() }
+function stepDay(k){ const n=addDays(S.sel,k); if(n<S.start||n>S.end)return; S.sel=n; S.q=''; $('dsQ').value=''; S.tab=defTab(rowAt(n)); if(syncMonth())renderCal(); renderSheet(); showOn() }
+/* 閉じて、押した日に戻る。after があれば、画面を作り直してから戻る */
+const closeDay=after=>{ const s=S.sel; S.sel=''; closeLayer(false); if(typeof after==='function')after(); const b=document.querySelector(`#cal [data-s="${s}"]`); try{ b&&b.focus({preventScroll:true}) }catch(e){} };
 /* 入れかえる。交番どおりと同じ結果になるなら、入れかえを消す。休日出勤の印は残す */
 function setCh(o){ const s=S.sel, r=rowAt(s); if(!r)return;
   const ph0=S.ch[s]&&S.ch[s].hol; if(ph0&&o.k!=='rest'&&o.k!=='none'&&!o.hol)o=Object.assign({},o,{hol:ph0});
   let same=false;
   if(S.kind==='kb'&&o.k==='kro'&&!o.hol){ const R=range(), t=Object.assign({},S.ch); delete t[s]; const x=makeRows(S.D,t,R.start,R.end,R.pos).find(q=>q.s===s); same=!!x&&!x.auto&&!!x.pl&&!x.pl.own&&x.pl.n===o.n }
   if(same)delete S.ch[s]; else S.ch[s]=o;
-  S.dirty[s]=1; saveCh(); const {hol,...plain}=o; addRecent(plain); hideDone(); closeDay(); update() }
-function resetDay(){ const s=S.sel; delete S.ch[s]; S.dirty[s]=1; saveCh(); hideDone(); closeDay(); update() }
+  S.dirty[s]=1; saveCh(); const {hol,...plain}=o; addRecent(plain); hideDone(); closeDay(update) }
+function resetDay(){ const s=S.sel; delete S.ch[s]; S.dirty[s]=1; saveCh(); hideDone(); closeDay(update) }
 
 /* ---------- 勤務発表から入れる ----------
    スクショは各自のAIに読ませる。ページはAIの返事(1日1行)を受け取るだけ。どこにも送らない */
@@ -1013,8 +1031,8 @@ function openWarn(L,next){ warnNext=next; $('warnList').innerHTML=L.map(x=>`<li>
 
 /* ---------- カレンダー用ファイル ---------- */
 /* その日を変えたことで、次の日も変わったとき(泊まりにした・泊まりをやめた)のひとこと */
-function nextNote(days){ const out=[];
-  days.forEach(s=>{ const r=rowAt(s), n=rowAt(addDays(s,1)); if(isTom(r)&&n&&n.ake&&!days.includes(n.s))out.push(['明け',n.s]); else if(n&&n.chk)out.push(['確認',n.s]) });
+function nextNote(days){ const out=[], has=new Set(days);
+  days.forEach(s=>{ const r=rowAt(s), n=rowAt(addDays(s,1)); if(isTom(r)&&n&&n.ake&&!has.has(n.s))out.push(['明け',n.s]); else if(n&&n.chk)out.push(['確認',n.s]) });
   const a=out.filter(x=>x[0]==='明け').map(x=>P(x[1]).d+'日'), c=out.filter(x=>x[0]==='確認').map(x=>P(x[1]).d+'日');
   return (a.length?ph(`${a.join('・')}は`,'明けになるよ。','前の予定が','入っていたら、','それも消してね。'):'')+(c.length?ph(`${c.join('・')}も`,'確かめてね。'):'') }
 function hand(r,name){ const blob=new Blob([r.text],{type:'text/calendar;charset=utf-8'}), url=URL.createObjectURL(blob);
@@ -1026,19 +1044,19 @@ const hideDone=()=>showDone('');
 function goAll(){ const D=S.D; if(!D||!S.rows.length)return; const rest=$('optRest').checked, r=ics(D,S.rows,{rest}); if(!r.n)return;
   const name=`行路_${md(S.start).replace('/','-')}から.ics`; hand(r,name);
   S.rows.forEach(x=>{ delete S.dirty[x.s] }); saveCh();
-  if(S.kind==='kb'&&!S.sample&&S.mode==='kb')LS.set(KEY_LAST,JSON.stringify({from:D.from,day:S.day,pos:S.pos}));
+  if(S.kind==='kb'&&!S.sample&&S.mode==='kb'){ LAST={from:D.from,day:S.day,pos:S.pos}; LS.set(KEY_LAST,JSON.stringify(LAST)) }
   if(S.mode!=='one'){ S.lastBase=S.kind; saveOpt() }
   update();
   showDone(isIOS()?ph(`${r.n}件の予定を`,'作ったよ。','一覧が出たら、','右上の「すべて追加」で、','入れるカレンダー','（「行路」など）を','選んでね。','出ないときは、','Safari で','開き直してから','押してね。')
     :ph(`${r.n}件の予定を`,`「${name}」に`,'保存したよ。','開くと、','カレンダーに','入れられる。')) }
 function goDirty(){ const D=S.D, days=dirtyList(); if(!D||!days.length)return;
-  const rows=S.rows.filter(x=>days.includes(x.s)), r=ics(D,rows,{rest:true}), lab=days.map(s=>P(s).d+'日').join('・'), extra=nextNote(days);
+  const has=new Set(days), rows=S.rows.filter(x=>has.has(x.s)), r=ics(D,rows,{rest:true}), lab=days.map(s=>P(s).d+'日').join('・'), extra=nextNote(days);
   if(r.n){ const name=`行路_変えた日_${md(days[0]).replace('/','-')}.ics`; hand(r,name);
     showDone(ph(`${lab}の予定を`,'作ったよ。')+(isIOS()?ph('出てきた画面で、','カレンダーを','「行路」にして','追加してね。'):ph(`「${name}」を`,'開いて入れてね。'))+ph('前に入れていた',`${lab}の予定は`,'自動では消えないので、','カレンダーのアプリで','消してね。')+extra) }
   else showDone(ph(`${lab}は`,'入れる予定がないよ。','前に入れていた予定が','あれば、','カレンダーのアプリで','消してね。')+extra);
   days.forEach(s=>{ delete S.dirty[s] }); saveCh(); update() }
-function tryGo(kind){ const all=problems(), days=dirtyList();
-  const L=kind==='all'?all:all.filter(x=>days.some(s=>s===x.s||addDays(s,1)===x.s));
+function tryGo(kind){ const all=problems(), near=new Set(); dirtyList().forEach(s=>{ near.add(s); near.add(addDays(s,1)) });
+  const L=kind==='all'?all:all.filter(x=>near.has(x.s));
   const run=kind==='all'?goAll:goDirty; if(L.length){ openWarn(L,run); return } run() }
 
 /* ---------- つなぐ ---------- */
@@ -1063,7 +1081,7 @@ $('kb').onclick=e=>{ const td=e.target.closest('td[data-pos]'); if(td)choosePos(
 $('cal').onclick=e=>{ const b=e.target.closest('button[data-s]'); if(b)openSheet(b.dataset.s) };
 $('mPrev').onclick=()=>{ S.mi--; renderCal() }; $('mNext').onclick=()=>{ S.mi++; renderCal() };
 $('note').onclick=e=>{ const b=e.target.closest('button[data-s]'); if(b)openSheet(b.dataset.s) };
-$('dsClose').onclick=closeDay; $('dsPrev').onclick=()=>stepDay(-1); $('dsNext').onclick=()=>stepDay(1);
+$('dsClose').onclick=()=>closeDay(); $('dsPrev').onclick=()=>stepDay(-1); $('dsNext').onclick=()=>stepDay(1);
 $('dsTabs').onclick=e=>{ const b=e.target.closest('button[data-t]'); if(!b)return; S.tab=b.dataset.t; S.q=''; $('dsQ').value=''; renderSheet(); showOn() };
 $('dsQ').oninput=()=>{ S.q=$('dsQ').value.trim(); renderSheet(); $('dsBody').scrollTop=0 };
 $('dsNow').onclick=e=>{ if(e.target.id==='dsReset')resetDay() };
@@ -1108,7 +1126,7 @@ $('warnList').onclick=e=>{ const b=e.target.closest('button[data-s]'); if(!b)ret
 $('scrim').onclick=()=>{ if(layer==='ds')closeDay(); else closeLayer() };
 document.addEventListener('keydown',e=>{ if(e.key!=='Escape'||!layer)return; if(e.target===$('dsQ')&&$('dsQ').value){ $('dsQ').value=''; S.q=''; renderSheet(); return } if(layer==='ds')closeDay(); else closeLayer() });
 /* 2回目からは、覚えているデータで開く */
-(function(){ let D=null; try{ D=JSON.parse(LS.get(KEY)||'null') }catch(e){ D=null } if(okData(D))setData(D,false); else update() })();
+(function(){ let D=null; try{ D=JSON.parse(LS.get(KEY)||'null') }catch(e){ D=null } if(okData(D))setData(D,false,true); else update() })();
 window.__kouro={build,plan,ics,isKyu,holidays,endOf,applyCh,blankRows,ownPlan,makeRows,parseDuty,mapTok,readDuty,ASK,S,setData,update,openSheet,setMode,problems,CHS:()=>CHS,NT:()=>NT};
 })();
 </script>
