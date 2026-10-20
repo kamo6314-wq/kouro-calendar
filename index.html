@@ -285,6 +285,7 @@ details.help{padding:0 2px}
 details.help summary{cursor:pointer;font-weight:700;font-size:14px;min-height:44px;display:flex;align-items:center}
 details.help ol,details.help ul{margin:4px 0 0;padding-left:1.3em;font-size:13px;display:flex;flex-direction:column;gap:6px}
 details.help h3{margin:12px 0 0;font-size:13px}
+details.help img{display:block;width:100%;max-width:345px;height:auto;border-radius:10px;margin:8px 0 4px}
 .foot{font-size:12px;color:var(--mut);margin:0;padding:0 2px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
@@ -375,6 +376,14 @@ details.help h3{margin:12px 0 0;font-size:13px}
         <li><span class="nb">「カレンダーに入れる」を</span><span class="nb">押すと、</span><span class="nb">予定の一覧が出るよ。</span><span class="nb">右上の「すべて追加」で、</span><span class="nb">入れるカレンダーに</span><span class="nb">「行路」を選ぶ。</span></li>
         <li><span class="nb">ダイヤ改正や</span><span class="nb">交番が変わったときは、</span><span class="nb">「行路」の</span><span class="nb">カレンダーごと消してから、</span><span class="nb">もう一度入れる。</span></li>
       </ol>
+      <h3>休みの色を分けたいとき</h3>
+      <ol>
+        <li><span class="nb">カレンダーのアプリで、</span><span class="nb">画面の下の</span><span class="nb">カレンダーのボタンを押す。</span><img src="img/cal-button.jpg" width="690" height="254" loading="lazy" decoding="async" alt="カレンダーのアプリの画面の下にある、カレンダーのボタン"></li>
+        <li><span class="nb">「カレンダーを追加」で、</span><span class="nb">「休み」という名前の</span><span class="nb">カレンダーを作って、</span><span class="nb">好きな色にする。</span><img src="img/cal-add.jpg" width="690" height="221" loading="lazy" decoding="async" alt="「カレンダーを追加」のボタン"></li>
+        <li><span class="nb">このページの「入れ方」で、</span><span class="nb">「休みは別のカレンダーに入れる」を</span><span class="nb">オンにする。</span></li>
+        <li><span class="nb">「カレンダーに入れる」で</span><span class="nb">行路を入れたら、</span><span class="nb">ページに戻って</span><span class="nb">「休みを入れる」を押す。</span><span class="nb">カレンダーは</span><span class="nb">「休み」を選ぶ。</span></li>
+        <li><span class="nb">前に「行路」の</span><span class="nb">カレンダーに入れた休みは、</span><span class="nb">自動では消えないので、</span><span class="nb">カレンダーのアプリで</span><span class="nb">消してね。</span></li>
+      </ol>
       <h3>勤務が変わったとき</h3>
       <ol>
         <li><span class="nb">上の「1日だけ」で、</span><span class="nb">変わった日を押して</span><span class="nb">選び直す。</span></li>
@@ -443,6 +452,7 @@ details.help h3{margin:12px 0 0;font-size:13px}
       <div class="r" id="rngRow"><span class="t">入れる期間</span><select id="rng" aria-label="入れる期間"></select></div>
       <div class="r sub" id="untilBox" hidden><span>この日まで</span><input type="date" id="until" style="max-width:none"></div>
       <div class="r"><span class="t">休みの日も入れる<small><span class="nb">公休・特休などを</span><span class="nb">終日で入れる</span></small></span><span class="sw"><input type="checkbox" id="optRest" checked aria-label="休みの日も入れる"><i></i></span></div>
+      <div class="r" id="sepRow"><span class="t">休みは別のカレンダーに入れる<small><span class="nb">色を分けたいときに。</span><span class="nb">行路と休みを、</span><span class="nb">2回に分けて入れるよ</span></small></span><span class="sw"><input type="checkbox" id="optSep" aria-label="休みは別のカレンダーに入れる"><i></i></span></div>
       <div class="r"><span class="t">通知を付ける</span><span class="sw"><input type="checkbox" id="ntOn" checked aria-label="通知を付ける"><i></i></span></div>
       <div id="ntBody">
         <div class="r"><span class="t">ふだんの通知<small><span class="nb">出勤の何分前に</span><span class="nb">知らせるか</span></small></span><select id="ntBase" aria-label="ふだんの通知"></select></div>
@@ -477,10 +487,10 @@ const S={D:null,sample:false,mode:null,pos:'',day:'',rng:'m3',until:'',fmon:'',f
 const NT_DEF={on:true,base:120,earlyOn:true,from:4,to:7,early:30,eveOn:false,eve:'21:00'};
 let OPT={}; try{ OPT=JSON.parse(LS.get(KEY_OPT)||'null')||{} }catch(e){ OPT={} } if(!OPT||typeof OPT!=='object')OPT={};
 let NT=Object.assign({},NT_DEF,OPT.nt&&typeof OPT.nt==='object'?OPT.nt:{});
-if(OPT.rest===false)$('optRest').checked=false;
+if(OPT.rest===false)$('optRest').checked=false; if(OPT.sep===true)$('optSep').checked=true;
 S.mode=['kb','free','one'].includes(OPT.mode)?OPT.mode:null;
 if(['m1','m2','m3','date'].includes(OPT.rng))S.rng=OPT.rng; if(['m1','m2','m3'].includes(OPT.frng))S.frng=OPT.frng; if(OPT.lastBase==='free')S.lastBase='free';
-const saveOpt=()=>{ const o={nt:NT,rest:$('optRest').checked,mode:S.mode,rng:S.rng,frng:S.frng,until:S.until,lastBase:S.lastBase,fmon:S.fmon};
+const saveOpt=()=>{ const o={nt:NT,rest:$('optRest').checked,sep:$('optSep').checked,mode:S.mode,rng:S.rng,frng:S.frng,until:S.until,lastBase:S.lastBase,fmon:S.fmon};
   if(S.D&&!S.sample&&S.pos){ o.kbFrom=S.D.from; o.kbDay=S.day; o.kbPos=S.pos } else if(OPT.kbFrom){ o.kbFrom=OPT.kbFrom; o.kbDay=OPT.kbDay; o.kbPos=OPT.kbPos }
   OPT=o; LS.set(KEY_OPT,JSON.stringify(o)) };
 
@@ -620,6 +630,9 @@ function leadOf(pl){ if(!NT.on||!pl||pl.all||!pl.tm)return null; const h=+String
 const durOf=n=>'-PT'+(Math.floor(n/60)?Math.floor(n/60)+'H':'')+(n%60?n%60+'M':'')+(n===0?'0M':'');
 
 /* ---------- カレンダー用ファイル(.ics) ---------- */
+/* 予定の種類:行路(勤務。休日出勤・手で入れた予定も)か、休みか。ファイルに入れないものは ''。
+   数える・ファイルに入れる・2つに分ける、どれもここを通す */
+const evKind=(r,rest)=>r.pl?'kro':rest&&(r.rest||r.ake&&r.hol)?'rest':'';
 const esc=s=>String(s||'').replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\r?\n/g,'\\n');
 const u8=ch=>{ const c=ch.codePointAt(0); return c<0x80?1:c<0x800?2:c<0x10000?3:4 };
 function fold(line){ if(line.length<=25)return line; let all=0; for(const ch of line)all+=u8(ch); if(all<=75)return line; const out=[]; let cur='', n=0;
@@ -629,10 +642,12 @@ const dt=s=>String(s).replace(/-/g,'');
 /* 予定のUIDは、日付と中身から作る。同じ中身なら同じUID。中身が変わった日は、別の予定として入る(iPhone は同じUIDの予定を置きかえないため) */
 const hash=x=>{ let h=0x811c9dc5; for(const c of String(x)){ h^=c.codePointAt(0); h=Math.imul(h,0x01000193)>>>0 } return h.toString(36) };
 const uid=(D,s,key)=>'kouro-'+dt(D.from)+'-'+dt(s)+'-'+hash(key)+'@kouro-calendar';
+/* opt.only:'kro' か 'rest' のとき、その種類だけのファイルにする(休みを別のカレンダーに入れる人のため)。
+   休みだけのファイルは、UID を変える(前に「行路」のカレンダーへ入れた休みと同じ UID だと、iPhone が入れないことがあるため) */
 function ics(D,rows,opt){ const now=new Date(), stamp=`${now.getUTCFullYear()}${pad(now.getUTCMonth()+1)}${pad(now.getUTCDate())}T${pad(now.getUTCHours())}${pad(now.getUTCMinutes())}${pad(now.getUTCSeconds())}Z`;
-  const L=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//KouroCalendar//JA','CALSCALE:GREGORIAN','METHOD:PUBLISH','X-WR-CALNAME:行路','X-WR-TIMEZONE:Asia/Tokyo'];
-  const rev=`${jpDate(D.from)}${D.rev||'改正'}の行路`; let n=0;
-  rows.forEach(r=>{
+  const sepR=opt.only==='rest', L=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//KouroCalendar//JA','CALSCALE:GREGORIAN','METHOD:PUBLISH','X-WR-CALNAME:'+(sepR?'休み':'行路'),'X-WR-TIMEZONE:Asia/Tokyo'];
+  const rev=`${jpDate(D.from)}${D.rev||'改正'}の行路`, rk=(sepR?'sep|':'')+'rest|'; let n=0;
+  rows.forEach(r=>{ const k=evKind(r,opt.rest); if(!k||opt.only&&opt.only!==k)return;
     if(r.pl){ const pl=r.pl; n++;
       const a=pl.all?'DTSTART;VALUE=DATE:'+dt(pl.s):'DTSTART:'+utc(pl.s,pl.tm), b=pl.all?'DTEND;VALUE=DATE:'+dt(addDays(pl.s,1)):'DTEND:'+utc(pl.e||pl.s,pl.te||pl.tm);
       L.push('BEGIN:VEVENT','UID:'+uid(D,r.s,[pl.t,a,b,pl.loc||''].join('|')),'DTSTAMP:'+stamp,a,b);
@@ -643,9 +658,9 @@ function ics(D,rows,opt){ const now=new Date(), stamp=`${now.getUTCFullYear()}${
       if(NT.on&&NT.eveOn&&!pl.all&&pl.tm)L.push('BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:'+esc('あしたは '+pl.t+'　出勤 '+tm(pl.tm)),'TRIGGER;VALUE=DATE-TIME:'+utc(addDays(pl.s,-1),NT.eve),'END:VALARM');
       L.push('END:VEVENT') }
     else if(r.ake&&r.hol&&opt.rest){ n++; const sm=r.hol+'（明けは休日出勤）';
-      L.push('BEGIN:VEVENT','UID:'+uid(D,r.s,'rest|'+sm),'DTSTAMP:'+stamp,'DTSTART;VALUE=DATE:'+dt(r.s),'DTEND;VALUE=DATE:'+dt(addDays(r.s,1)),'SUMMARY:'+esc(sm),'DESCRIPTION:'+esc(rev),'TRANSP:TRANSPARENT','END:VEVENT') }
+      L.push('BEGIN:VEVENT','UID:'+uid(D,r.s,rk+sm),'DTSTAMP:'+stamp,'DTSTART;VALUE=DATE:'+dt(r.s),'DTEND;VALUE=DATE:'+dt(addDays(r.s,1)),'SUMMARY:'+esc(sm),'DESCRIPTION:'+esc(rev),'TRANSP:TRANSPARENT','END:VEVENT') }
     else if(r.rest&&opt.rest){ n++; const sm=r.ch?r.v:'休日(特/公)';
-      L.push('BEGIN:VEVENT','UID:'+uid(D,r.s,'rest|'+sm),'DTSTAMP:'+stamp,'DTSTART;VALUE=DATE:'+dt(r.s),'DTEND;VALUE=DATE:'+dt(addDays(r.s,1)),'SUMMARY:'+esc(sm),'DESCRIPTION:'+esc(r.ch?rev:'交番 '+r.pos+'（'+r.v+'）\n'+rev),'TRANSP:TRANSPARENT','END:VEVENT') } });
+      L.push('BEGIN:VEVENT','UID:'+uid(D,r.s,rk+sm),'DTSTAMP:'+stamp,'DTSTART;VALUE=DATE:'+dt(r.s),'DTEND;VALUE=DATE:'+dt(addDays(r.s,1)),'SUMMARY:'+esc(sm),'DESCRIPTION:'+esc(r.ch?rev:'交番 '+r.pos+'（'+r.v+'）\n'+rev),'TRANSP:TRANSPARENT','END:VEVENT') } });
   L.push('END:VCALENDAR'); return {text:L.map(fold).join('\r\n')+'\r\n',n} }
 
 /* ---------- 見本(画面を試すための、作りものの行路) ---------- */
@@ -754,7 +769,9 @@ let RI=null, RIof=null;
 const rowAt=s=>{ if(RIof!==S.rows){ RI=new Map(S.rows.map(r=>[r.s,r])); RIof=S.rows } return RI.get(s) };
 const baseOf=r=>r&&(r.ch||r.auto)?r.base:r;
 const dirtyList=()=>S.rows.filter(r=>S.dirty[r.s]).map(r=>r.s);
-const evCount=(rows,rest)=>rows.filter(r=>r.pl||(rest&&(r.rest||r.ake&&r.hol))).length;
+const evCount=(rows,rest)=>rows.filter(r=>evKind(r,rest)).length;
+/* 休みを別のカレンダーに入れるか(休みも入れるときだけ) */
+const sepOn=()=>$('optRest').checked&&$('optSep').checked;
 function monthHasFree(m){ return Object.keys(CHS.free).some(k=>k.slice(0,7)===m) }
 
 /* ---------- データ ---------- */
@@ -769,7 +786,7 @@ function setData(D,sample,stored){ S.D=D; S.sample=!!sample; S.pos=''; S.day='';
   update() }
 
 /* ---------- 画面全体 ---------- */
-function update(){ const D=S.D;
+function update(){ const D=S.D; if(pend&&!sepOn())hideDone();
   $('hello').hidden=!!D; $('choose').hidden=!D||!!S.mode; $('app').hidden=!D||!S.mode; $('dock').hidden=!D||!S.mode;
   if(!D||!S.mode)return;
   [...$('modeSeg').children].forEach(b=>{ const on=b.dataset.m===S.mode; b.classList.toggle('on',on); b.setAttribute('aria-selected',String(on)) });
@@ -875,7 +892,7 @@ const LEADS=[15,30,45,60,90,120,150,180];
 function fillSel(sel,list,val,lab){ const key=list.join(','); if(sel.dataset.k!==key){ sel.innerHTML=list.map(x=>`<option value="${x}">${lab(x)}</option>`).join(''); sel.dataset.k=key } sel.value=String(val) }
 function renderSet(){ const rest=$('optRest').checked;
   const nt=NT.on?`通知 ${leadTxt(NT.base)}`+(NT.earlyOn?`（${NT.from}〜${NT.to}時台は${leadTxt(NT.early)}）`:''):'通知なし';
-  $('setSum').innerHTML=ph(...[S.mode==='one'?'':endLab()+'・',rest?'休みも入れる・':'休みは入れない・'].filter(Boolean),nt) }
+  $('setSum').innerHTML=ph(...[S.mode==='one'?'':endLab()+'・',rest?(sepOn()?'休みは別のカレンダー・':'休みも入れる・'):'休みは入れない・'].filter(Boolean),nt) }
 function renderSetSheet(){ const one=S.mode==='one', free=S.mode==='free'; $('rngRow').hidden=one;
   const start=free?(S.fmon||curMon())+'-01':(S.day||today()), keys=free?['m1','m2','m3']:['m1','m2','m3','date'], cur=free?S.frng:S.rng;
   $('rng').innerHTML=keys.map(k=>`<option value="${k}">${k==='date'?'日付で決める':P(endOf(start,k)).m+'月末まで'}</option>`).join(''); $('rng').value=cur;
@@ -884,10 +901,11 @@ function renderSetSheet(){ const one=S.mode==='one', free=S.mode==='free'; $('rn
   fillSel($('ntFrom'),[0,1,2,3,4,5,6,7,8,9,10,11],NT.from,x=>x+'時'); fillSel($('ntTo'),[0,1,2,3,4,5,6,7,8,9,10,11],NT.to,x=>x+'時');
   fillSel($('ntEve'),['18:00','19:00','20:00','21:00','22:00','23:00'],NT.eve,x=>x);
   $('ntOn').checked=NT.on; $('ntEarlyOn').checked=NT.earlyOn; $('ntEveOn').checked=NT.eveOn;
-  $('ntBody').hidden=!NT.on; $('ntEarlyBox').hidden=!NT.earlyOn; $('ntEveBox').hidden=!NT.eveOn }
+  $('ntBody').hidden=!NT.on; $('ntEarlyBox').hidden=!NT.earlyOn; $('ntEveBox').hidden=!NT.eveOn; $('sepRow').hidden=!$('optRest').checked }
 
 /* ---------- 下のボタン ---------- */
 function renderDock(){ const rest=$('optRest').checked, n=evCount(S.rows,rest), dl=dirtyList(), g=$('goBtn'), g2=$('go2');
+  if(pend){ g.disabled=false; $('goT').textContent='休みを入れる'; $('goN').textContent=String(pend.days.length); g2.hidden=true; return }
   if(S.mode==='one'){ g.disabled=!dl.length; $('goT').textContent=dl.length?'変えた日だけ入れる':'変わった日を押してね'; $('goN').textContent=dl.length?String(dl.length):'';
     g2.hidden=!n; g2.textContent=`ぜんぶ入れ直す（${n}件）` }
   else{ g.disabled=!n; $('goN').textContent=n?String(n):'';
@@ -1040,17 +1058,44 @@ function hand(r,name){ const blob=new Blob([r.text],{type:'text/calendar;charset
   else{ const a=document.createElement('a'); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove() }
   setTimeout(()=>URL.revokeObjectURL(url),60000) }
 function showDone(html){ const d=$('done'); d.innerHTML=html; d.hidden=!html }
-const hideDone=()=>showDone('');
-function goAll(){ const D=S.D; if(!D||!S.rows.length)return; const rest=$('optRest').checked, r=ics(D,S.rows,{rest}); if(!r.n)return;
-  const name=`行路_${md(S.start).replace('/','-')}から.ics`; hand(r,name);
-  S.rows.forEach(x=>{ delete S.dirty[x.s] }); saveCh();
+/* 休みを別のカレンダーに入れるとき、行路のあとに入れる休み {days,s,dirty,tail}。ほかの操作をしたら取り消す */
+let pend=null;
+const hideDone=()=>{ pend=null; showDone('') };
+const restRows=rows=>rows.filter(x=>evKind(x,true)==='rest');
+const fileName=(kind,s,dirty)=>`${kind}_${dirty?'変えた日_':''}${md(s).replace('/','-')}${dirty?'':'から'}.ics`;
+/* 「行路」「休み」のどちらのカレンダーに入れるかの案内 */
+const calTo=(cal,n,name)=>isIOS()?ph(`${cal}${n}件を`,'作ったよ。','一覧が出たら、','右上の「すべて追加」で、','カレンダーは',`「${cal}」を`,'選んでね。')
+  :ph(`${cal}${n}件を`,`「${name}」に`,'保存したよ。','開いて、',`「${cal}」の`,'カレンダーに','入れてね。');
+const nextRest=()=>ph('終わったら、','このページに戻って、','下の「休みを入れる」を','押してね。');
+function goRest(){ const D=S.D, p=pend; pend=null; if(!D||!p)return;
+  const has=new Set(p.days), rows=S.rows.filter(x=>has.has(x.s)), r=ics(D,rows,{rest:true,only:'rest'});
+  restRows(rows).forEach(x=>{ delete S.dirty[x.s] }); saveCh(); update();
+  if(!r.n){ showDone(ph('入れる休みが','なくなったよ。')+p.tail); return }
+  const name=fileName('休み',p.s||rows[0].s,p.dirty); hand(r,name); showDone(calTo('休み',r.n,name)+p.tail) }
+function goAll(){ const D=S.D; if(!D||!S.rows.length)return; const rest=$('optRest').checked, sep=sepOn(), r=ics(D,S.rows,{rest,only:sep?'kro':''});
+  const rd=sep?restRows(S.rows).map(x=>x.s):[]; if(!r.n&&!rd.length)return;
   if(S.kind==='kb'&&!S.sample&&S.mode==='kb'){ LAST={from:D.from,day:S.day,pos:S.pos}; LS.set(KEY_LAST,JSON.stringify(LAST)) }
   if(S.mode!=='one'){ S.lastBase=S.kind; saveOpt() }
+  if(sep){ pend=rd.length?{days:rd,s:S.start,dirty:false,tail:ph('前に「行路」の','カレンダーに入れた休みが','あれば、','消してね。')}:null;
+    S.rows.forEach(x=>{ if(evKind(x,true)!=='rest')delete S.dirty[x.s] }); saveCh();
+    if(!r.n){ goRest(); return }
+    const name=fileName('行路',S.start,false); hand(r,name); update();
+    showDone(calTo('行路',r.n,name)+(pend?nextRest():'')); return }
+  const name=fileName('行路',S.start,false); hand(r,name);
+  S.rows.forEach(x=>{ delete S.dirty[x.s] }); saveCh();
   update();
   showDone(isIOS()?ph(`${r.n}件の予定を`,'作ったよ。','一覧が出たら、','右上の「すべて追加」で、','入れるカレンダー','（「行路」など）を','選んでね。','出ないときは、','Safari で','開き直してから','押してね。')
     :ph(`${r.n}件の予定を`,`「${name}」に`,'保存したよ。','開くと、','カレンダーに','入れられる。')) }
 function goDirty(){ const D=S.D, days=dirtyList(); if(!D||!days.length)return;
-  const has=new Set(days), rows=S.rows.filter(x=>has.has(x.s)), r=ics(D,rows,{rest:true}), lab=days.map(s=>P(s).d+'日').join('・'), extra=nextNote(days);
+  const has=new Set(days), rows=S.rows.filter(x=>has.has(x.s)), sep=sepOn(), r=ics(D,rows,{rest:true,only:sep?'kro':''}), lab=days.map(s=>P(s).d+'日').join('・'), extra=nextNote(days);
+  if(sep){ const rd=restRows(rows).map(x=>x.s), tail=ph('前に入れていた',`${lab}の予定は`,'自動では消えないので、','カレンダーのアプリで','消してね。')+extra;
+    pend=rd.length?{days:rd,dirty:true,tail}:null;
+    days.forEach(s=>{ if(!rd.includes(s))delete S.dirty[s] }); saveCh();
+    if(!r.n&&pend){ goRest(); return }
+    update();
+    if(!r.n){ showDone(ph(`${lab}は`,'入れる予定がないよ。','前に入れていた予定が','あれば、','カレンダーのアプリで','消してね。')+extra); return }
+    const name=fileName('行路',rows.find(x=>evKind(x,true)==='kro').s,true); hand(r,name);
+    showDone(calTo('行路',r.n,name)+(pend?nextRest():tail)); return }
   if(r.n){ const name=`行路_変えた日_${md(days[0]).replace('/','-')}.ics`; hand(r,name);
     showDone(ph(`${lab}の予定を`,'作ったよ。')+(isIOS()?ph('出てきた画面で、','カレンダーを','「行路」にして','追加してね。'):ph(`「${name}」を`,'開いて入れてね。'))+ph('前に入れていた',`${lab}の予定は`,'自動では消えないので、','カレンダーのアプリで','消してね。')+extra) }
   else showDone(ph(`${lab}は`,'入れる予定がないよ。','前に入れていた予定が','あれば、','カレンダーのアプリで','消してね。')+extra);
@@ -1097,7 +1142,8 @@ $('setRow').onclick=()=>{ renderSetSheet(); openLayer('set') };
 $('setClose').onclick=()=>closeLayer();
 $('rng').onchange=e=>{ if(S.mode==='free')S.frng=e.target.value; else{ S.rng=e.target.value; if(S.rng==='date'&&!S.until)S.until=endOf(S.day||today(),'m3') } S.mi=0; saveOpt(); renderSetSheet(); update() };
 $('until').onchange=e=>{ S.until=e.target.value; saveOpt(); update() };
-$('optRest').onchange=()=>{ saveOpt(); update() };
+$('optRest').onchange=()=>{ $('sepRow').hidden=!$('optRest').checked; saveOpt(); update() };
+$('optSep').onchange=()=>{ saveOpt(); update() };
 const ntSet=(k,v)=>{ NT[k]=v; if(NT.to<NT.from)NT.to=NT.from; saveOpt(); renderSetSheet(); update() };
 $('ntOn').onchange=e=>ntSet('on',e.target.checked); $('ntEarlyOn').onchange=e=>ntSet('earlyOn',e.target.checked); $('ntEveOn').onchange=e=>ntSet('eveOn',e.target.checked);
 $('ntBase').onchange=e=>ntSet('base',+e.target.value); $('ntEarly').onchange=e=>ntSet('early',+e.target.value);
@@ -1117,7 +1163,7 @@ $('chClear').onclick=()=>{ const b=$('chClear');
   if(!b.classList.contains('warn')){ b.classList.add('warn'); b.textContent='もう一度押すと戻すよ'; clearTimeout(clrT); clrT=setTimeout(()=>renderCal(),4000); return }
   clearTimeout(clrT); S.rows.forEach(r=>{ if(S.ch[r.s]){ delete S.ch[r.s]; S.dirty[r.s]=1 } }); saveCh(); hideDone(); update() };
 /* 入れる */
-$('goBtn').onclick=()=>tryGo(S.mode==='one'?'dirty':'all');
+$('goBtn').onclick=()=>{ if(pend)goRest(); else tryGo(S.mode==='one'?'dirty':'all') };
 $('go2').onclick=()=>tryGo(S.mode==='one'?'all':'dirty');
 $('warnClose').onclick=()=>closeLayer();
 $('warnGo').onclick=()=>{ const f=warnNext; closeLayer(); if(f)f() };
