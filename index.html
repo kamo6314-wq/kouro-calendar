@@ -127,7 +127,8 @@ body.lock{overflow:hidden}
 .imp textarea:focus{box-shadow:inset 0 0 0 2px var(--ink)}
 .imp .err{font-size:12.5px}
 .ocr{display:flex;flex-direction:column;gap:8px}
-.ocr-or{margin:0;padding-top:12px;border-top:1px solid var(--sep);font-size:13px;font-weight:700;color:var(--mut)}
+.ocr-or{margin:0 0 -6px;padding-top:12px;border-top:1px solid var(--sep);font-size:13px;font-weight:700;color:var(--mut)}
+#ocrBtn:disabled{color:var(--mut)}
 .done-row{appearance:none;border:0;width:100%;text-align:left;cursor:pointer;display:flex;align-items:center;gap:10px;padding:10px 14px;min-height:52px;font-size:13px}
 .done-row b{font-size:14px}
 .done-row span{flex:1;color:var(--mut)}
@@ -337,7 +338,7 @@ details.help img{display:block;width:100%;max-width:345px;height:auto;border-rad
         <input type="file" id="ocrFile" accept="image/*" hidden>
         <p class="hint" id="ocrMsg"></p>
       </div>
-      <p class="ocr-or" id="ocrOr" hidden>AIで読むとき</p>
+      <p class="ocr-or" id="ocrOr" hidden>うまく読めないときは、AIで</p>
       <div class="st"><span class="n">1</span><div class="b">
         <p>お願い文をコピーする</p>
         <button class="btn sec" type="button" id="impCopy">お願い文をコピー</button>
@@ -747,26 +748,29 @@ function readDuty(D,R,y,m){ const dim=new Date(y,m,0).getDate(), days={}, iss=ne
    読み取りは、このスマホの中だけでする。外から読み込むのは読み取りの道具(tesseract.js と日本語のデータ)だけで、画像はどこにも送らない。
    表の線を探して消し、枠ごとに字を読む。読めない枠は「？」にして、いつもの「直してほしい日」に出す */
 const OCR=(()=>{
+  // 表の線を探す。縦の線を先に探して、上の端がそろった縦の線のまとまり(いちばん多いもの)を表とみなす。
+  //   表の外の線(画面の上の帯・下のタブ・区切り線・ページの長い枠)にまどわされないため
   function findLines(img){ const {w,h,lum}=img;
-    const hist=new Uint32Array(256); for(let i=0;i<lum.length;i++)hist[lum[i]|0]++; let bg=0; for(let i=1;i<256;i++)if(hist[i]>hist[bg])bg=i;
-    const thr=bg-25, dk=(x,y)=>lum[y*w+x]<thr;
-    const runH=y=>{ let b=0,c=0; for(let x=0;x<w;x++){ if(dk(x,y)){ c++; if(c>b)b=c } else c=0 } return b };
-    const hs=[]; for(let y=0;y<h;y++)if(runH(y)>=w*.45)hs.push(y);
+    const hist=new Uint32Array(256); for(let i=0;i<lum.length;i++)hist[lum[i]]++; let bg=0; for(let i=1;i<256;i++)if(hist[i]>hist[bg])bg=i;
+    const thr=bg-25, thin=Math.max(6,Math.round(Math.min(w,h)*.012));
     const grp=a=>{ const g=[]; a.forEach(v=>{ const l=g[g.length-1]; if(l&&v<=l.b+1)l.b=v; else g.push({a:v,b:v}) }); return g };
-    const thin=Math.max(6,Math.round(Math.min(w,h)*.012));
-    const H=grp(hs); if(H.length<2)return null;
-    const top=H[0].a, bot=H[H.length-1].b;
-    const runV=x=>{ let b=0,c=0; for(let y=top;y<=bot;y++){ if(dk(x,y)){ c++; if(c>b)b=c } else c=0 } return b };
-    const vs=[]; for(let x=0;x<w;x++)if(runV(x)>=(bot-top)*.5)vs.push(x);
-    const V=grp(vs); if(V.length<2)return null;
-    // 縦の線がもっと下まで続いていれば(最後の週が短いなど)、そこを表の下の端として足す
-    let vb=bot; V.forEach(g=>{ const x=(g.a+g.b)>>1; let y=bot+1; while(y<h&&dk(x,y))y++; if(y-1>vb)vb=y-1 });
-    if(vb>bot+thin*2)H.push({a:vb,b:vb});
+    // 列ごとの、いちばん長い暗い線(画像を1回なめるだけ)
+    const cur=new Int32Array(w), best=new Int32Array(w), end=new Int32Array(w);
+    for(let y=0;y<h;y++){ const o=y*w; for(let x=0;x<w;x++){ if(lum[o+x]<thr){ const c=++cur[x]; if(c>best[x]){ best[x]=c; end[x]=y } } else cur[x]=0 } }
+    // 線は細いので、少し横の列よりずっと長い。横に広い暗い帯(画面の上の帯など)は、となりも同じ長さなので線にしない
+    const minRun=Math.max(thin*6,h*.04), nb=x=>x<0||x>=w?0:best[x], vs=[]; for(let x=0;x<w;x++)if(best[x]>=minRun&&best[x]>=1.5*Math.max(nb(x-thin*2),nb(x+thin*2)))vs.push(x);
+    const cand=grp(vs).filter(g=>g.b-g.a+1<=thin*2).map(g=>{ const x=(g.a+g.b)>>1; return Object.assign(g,{top:end[x]-best[x]+1,bot:end[x]}) });
+    let V=[]; cand.forEach(g=>{ const s=cand.filter(q=>Math.abs(q.top-g.top)<=thin); if(s.length>V.length)V=s });
+    if(V.length<3)return null;
+    // 横の線は、その表の中だけで探す。上と下の端に線がなければ足す(最後の週が短いときなど)
+    const top=Math.min(...V.map(g=>g.top)), bot=Math.max(...V.map(g=>g.bot)), x0=V[0].a, x1=V[V.length-1].b, hs=[];
+    for(let y=Math.max(0,top-thin);y<=Math.min(h-1,bot+thin);y++){ let n=0; const o=y*w; for(let x=x0;x<=x1;x++)if(lum[o+x]<thr)n++; if(n>=(x1-x0+1)*.45)hs.push(y) }
+    const H=grp(hs); if(!H.length||H[0].a>top+thin)H.unshift({a:top,b:top}); if(H[H.length-1].b<bot-thin)H.push({a:bot,b:bot}); if(H.length<2)return null;
     return {bg,H,V,thin} }
-  // 線を背景の色で消した明るさを作る
-  function eraseLines(img,L){ const {w,h}=img, lum=Float32Array.from(img.lum);
-    L.H.forEach(g=>{ if(g.b-g.a+1>L.thin)return; for(let y=Math.max(0,g.a-1);y<=Math.min(h-1,g.b+1);y++)for(let x=0;x<w;x++)lum[y*w+x]=L.bg });
-    L.V.forEach(g=>{ if(g.b-g.a+1>L.thin)return; for(let x=Math.max(0,g.a-1);x<=Math.min(w-1,g.b+1);x++)for(let y=0;y<h;y++)lum[y*w+x]=L.bg });
+  // 線を背景の色で消した明るさを作る(縦の線は表の中だけ。表の上の「何年何月」を消さないため)
+  function eraseLines(img,L){ const {w,h}=img, lum=img.lum.slice(), yT=L.H[0].a, yB=L.H[L.H.length-1].b;
+    L.H.forEach(g=>{ if(g.b-g.a+1>L.thin)return; for(let y=Math.max(0,g.a-1);y<=Math.min(h-1,g.b+1);y++)lum.fill(L.bg,y*w,y*w+w) });
+    L.V.forEach(g=>{ if(g.b-g.a+1>L.thin)return; for(let x=Math.max(0,g.a-1);x<=Math.min(w-1,g.b+1);x++)for(let y=yT;y<=yB;y++)lum[y*w+x]=L.bg });
     return {w,h,lum} }
   // 読み違えやすい形を直す:横棒・休みの名前・英字と数字の番号
   function fixTok(t){ t=String(t||'').normalize('NFKC').replace(/[|｜\[\]_]/g,''); if(!/[0-9A-Za-z\u3040-\u30ff\u4e00-\u9fff]/.test(t))return '';
@@ -781,22 +785,24 @@ const OCR=(()=>{
     const m=/^([A-Za-z])\1?([0-9OoDQIl]{3,6})([a-z]?)$/.exec(t)||/([A-Za-z])([0-9OoDQIl]{3,6})([a-z]?)(?![0-9])/.exec(t);
     if(m&&(m[2].match(/\d/g)||[]).length>=2)return m[1].toUpperCase()+dg(m[2])+m[3];
     return t }
+  const txt=t=>String(t||'').normalize('NFKC').replace(/\s+/g,''), ink=(img,x,y,bg)=>img.lum[y*img.w+x]<bg-80;
+  const WRE=new RegExp(`^[(（]?[${WD}]曜?[)）]?$`);
   // 決まった形の語か(番号・休み・明け・曜日など)。読み直すかどうかを決めるため
   const okTok=t=>/^[A-Za-z]?\d{1,5}[a-z]?$|^[ー一\-]$|^[公特年]休$|^休み?$|^変形$|^[A-Z][A-Z]$|^[A-C]予$/.test(String(t).normalize('NFKC'));
   // 1行として読み、読めなければ1語、1字として読み直す(1字だけの数字は、1行では読めないことがある)
   async function readBox(img,b,read){ const rect={left:Math.max(0,b.x0-6),top:Math.max(0,b.y0-6),width:b.x1-b.x0+13,height:b.y1-b.y0+13};
-    for(const psm of ['7','8','10']){ const t=(await read(img,rect,psm)).map(w=>String(w.text||'').normalize('NFKC').replace(/\s+/g,'')).join(''); if(t)return t }
+    for(const psm of ['7','8','10']){ const t=(await read(img,rect,psm)).map(w=>txt(w.text)).join(''); if(t)return t }
     return '' }
   // 字のある所が、横に長く薄い棒か(「ー」)
-  function flat(img,b,bg){ let x0=1e9,y0=1e9,x1=-1,y1=-1,n=0; for(let y=b.y0;y<=b.y1;y++)for(let x=b.x0;x<=b.x1;x++)if(img.lum[y*img.w+x]<bg-80){ n++; if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y }
+  function flat(img,b,bg){ let x0=1e9,y0=1e9,x1=-1,y1=-1,n=0; for(let y=b.y0;y<=b.y1;y++)for(let x=b.x0;x<=b.x1;x++)if(ink(img,x,y,bg)){ n++; if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y }
     const w=x1-x0+1, h=y1-y0+1; return n>0&&w>=h*3&&n>=w*h*.55 }
   // 語の枠の中で、字のある行のかたまりのうち、いちばん高いものだけを残す
   function tighten(img,w,bg){ const bands=[]; let cur=null;
-    for(let y=w.y0;y<=w.y1;y++){ let n=0; for(let x=w.x0;x<=w.x1;x++)if(img.lum[y*img.w+x]<bg-80)n++;
+    for(let y=w.y0;y<=w.y1;y++){ let n=0; for(let x=w.x0;x<=w.x1;x++)if(ink(img,x,y,bg))n++;
       if(n){ if(cur&&y<=cur.b+3)cur.b=y; else { cur={a:y,b:y}; bands.push(cur) } } }
     if(bands.length<2)return; const k=bands.reduce((p,q)=>q.b-q.a>p.b-p.a?q:p); w.y0=k.a; w.y1=k.b }
   // 読めた語の外に残った、暗い点のかたまり(行ごと)
-  function blobs(img,c,bg,ws){ const inW=(x,y)=>ws.some(q=>x>=q.x0-3&&x<=q.x1+3&&y>=q.y0-3&&y<=q.y1+3), dark=(x,y)=>img.lum[y*img.w+x]<bg-80&&!inW(x,y);
+  function blobs(img,c,bg,ws){ const inW=(x,y)=>ws.some(q=>x>=q.x0-3&&x<=q.x1+3&&y>=q.y0-3&&y<=q.y1+3), dark=(x,y)=>ink(img,x,y,bg)&&!inW(x,y);
     const bands=[]; let cur=null;
     for(let y=c.y0;y<=c.y1;y++){ let a=-1,b=-1,n=0; for(let x=c.x0;x<=c.x1;x++)if(dark(x,y)){ n++; if(a<0)a=x; b=x }
       if(n){ if(cur&&y<=cur.y1+2){ cur.y1=y; cur.x0=Math.min(cur.x0,a); cur.x1=Math.max(cur.x1,b); cur.n+=n } else { cur={y0:y,y1:y,x0:a,x1:b,n}; bands.push(cur) } } }
@@ -806,8 +812,11 @@ const OCR=(()=>{
       for(let i=0;i<=colN.length;i++){ const v=i<colN.length?colN[i]:0; if(v){ if(s<0)s=i; gap=0 } else if(s>=0){ gap++; if(gap>h*.8||i===colN.length){ const x0=B.x0+s, x1=B.x0+i-gap; let n=0,y0=1e9,y1=-1; for(let x=x0;x<=x1;x++)for(let y=B.y0;y<=B.y1;y++)if(dark(x,y)){ n++; if(y<y0)y0=y; if(y>y1)y1=y }
         if(n>=4)out.push({x0,x1,y0,y1,n}); s=-1; gap=0 } } } });
     return out.filter(b=>b.y1-b.y0>=2||b.x1-b.x0>=6) }
-  async function readGrid(img0,read){ const L=findLines(img0); if(!L)return null; const img=eraseLines(img0,L);
-    const ws=(await read(img,null,'11')).map(w=>({t:String(w.text||'').normalize('NFKC').replace(/\s+/g,''),x0:w.bbox.x0,y0:w.bbox.y0,x1:w.bbox.x1,y1:w.bbox.y1})).filter(w=>w.t&&!/^[|｜\[\]]+$/.test(w.t));
+  async function readGrid(img0,read0){ const L=findLines(img0); if(!L)return null;
+    // 勤務表にしては枠が多すぎるものは、読まない(関係のない表に長い時間をかけないため)
+    if((L.H.length-1)*(L.V.length-1)>300||L.H.length>17)return null;
+    const img=eraseLines(img0,L); let left=150; const read=(i,r,p)=>r&&--left<0?Promise.resolve([]):read0(i,r,p);
+    const ws=(await read(img,null,'11')).map(w=>({t:txt(w.text),x0:w.bbox.x0,y0:w.bbox.y0,x1:w.bbox.x1,y1:w.bbox.y1})).filter(w=>w.t&&!/^[|｜\[\]]+$/.test(w.t));
     const hs=ws.map(w=>w.y1-w.y0).sort((a,b)=>a-b), mh=hs[hs.length>>1]||0;
     ws.forEach(w=>{ if(mh&&w.y1-w.y0>mh*1.6)tighten(img,w,L.bg); w.cx=(w.x0+w.x1)/2; w.cy=(w.y0+w.y1)/2 });
     // 「1」「l」などと読んだ短い語でも、字の形が横に長い棒なら「ー」(1行路と読み違えると、気づかずに入ってしまうため)
@@ -823,8 +832,7 @@ const OCR=(()=>{
       ws1.forEach(w=>{ const l=c.lines.find(l=>Math.abs(l.cy-w.cy)<(w.y1-w.y0)*.6); if(l){ l.ws.push(w); l.y0=Math.min(l.y0,w.y0); l.y1=Math.max(l.y1,w.y1) } else c.lines.push({cy:w.cy,y0:w.y0,y1:w.y1,ws:[w]}) });
       c.lines.forEach(l=>{ l.ws.sort((p,q)=>p.cx-q.cx); l.t=l.ws.map(w=>w.t).join(''); l.x0=l.ws[0].x0 });
       // 読めた語の外に残った点のかたまりを、1つずつ読み直す。横に長く薄ければ「ー」
-      for(const b of blobs(img,c,L.bg,ws1)){ const bw=b.x1-b.x0+1, bh=b.y1-b.y0+1; if(bh<=L.thin&&bw>=(c.x1-c.x0)*.8)continue;
-        if(bw>=bh*3&&b.n>=bw*bh*.55){ c.lines.push({cy:(b.y0+b.y1)/2,y0:b.y0,y1:b.y1,x0:b.x0,t:'ー'}); continue }
+      for(const b of blobs(img,c,L.bg,ws1)){ if(b.y1-b.y0+1<=L.thin&&b.x1-b.x0+1>=(c.x1-c.x0)*.8)continue;
         const t=flat(img,b,L.bg)?'ー':await readBox(img,b,read); if(t)c.lines.push({cy:(b.y0+b.y1)/2,y0:b.y0,y1:b.y1,x0:b.x0,t}) }
       // 決まった形にならない語は、そこだけ大きくして読み直す
       for(const l of c.lines){ if(!l.ws||okTok(fixTok(l.t)))continue; const b={x0:Math.min(...l.ws.map(w=>w.x0)),y0:Math.min(...l.ws.map(w=>w.y0)),x1:Math.max(...l.ws.map(w=>w.x1)),y1:Math.max(...l.ws.map(w=>w.y1))};
@@ -838,13 +846,18 @@ const OCR=(()=>{
         if(m){ if(l.x0<m.x0){ m.t=l.t+m.t; m.x0=l.x0 } else m.t+=l.t; m.y0=Math.min(m.y0,l.y0); m.y1=Math.max(m.y1,l.y1) } else M.push(Object.assign({},l)) });
       M.forEach(l=>{ l.t=fixTok(l.t) }); c.lines=M.filter(l=>l.t) }
     // 表の上にある「何年何月」
-    const ym=/(20\d{2})年(\d{1,2})月/.exec(ws.filter(w=>w.y1<L.H[0].a).sort((p,q)=>p.y0-q.y0||p.x0-q.x0).map(w=>w.t).join(''));
+    const ym=/(20\d{2})年(\d{1,2})月/.exec(ws.filter(w=>w.y1<L.H[0].a).sort((p,q)=>Math.abs(p.cy-q.cy)>Math.min(p.y1-p.y0,q.y1-q.y0)/2?p.cy-q.cy:p.x0-q.x0).map(w=>w.t).join(''));
     return {days:interpret(G),ym:ym&&+ym[2]>=1&&+ym[2]<=12?{y:+ym[1],m:+ym[2]}:null} }
   // 枠の並びから、日ごとの1段目・2段目にする
   function interpret(G){ const nR=G.length, nC=G[0].length, out={};
     const dateOf=t=>{ const m=/^(\d{1,2})(?:日)?$/.exec(t||''); return m&&+m[1]>=1&&+m[1]<=31?+m[1]:0 };
     // 日付の行:1 ずつ増える日付が2つ以上並ぶ行。読めなかった日は、となりから埋める
-    const D=G.map(R=>R.map(c=>dateOf(c.lines[0]&&c.lines[0].t)));
+    const D=G.map(R=>R.map(c=>dateOf(c.lines[0]&&c.lines[0].t))), ban=G.map(R=>R.map(()=>false));
+    // 前の月・次の月の日が出ている表:日付が大きい数から 1 に戻る行は、最初の行では戻ったあと、最後の行では戻る前だけを使う
+    const dr=D.map((r,i)=>r.filter(Boolean).length>=2?i:-1).filter(i=>i>=0);
+    dr.forEach(i=>{ const r=D[i]; let k=-1, p=0; r.forEach((v,j)=>{ if(!v)return; if(p>=20&&v<=7&&k<0)k=j; p=v }); if(k<0)return;
+      const first=i===dr[0], last=i===dr[dr.length-1], cut=first&&last?(r.filter((v,j)=>v&&j>=k).length>=r.filter((v,j)=>v&&j<k).length?'pre':'post'):first?'pre':last?'post':'';
+      r.forEach((v,j)=>{ if(cut==='pre'&&j<k||cut==='post'&&j>=k){ r[j]=0; ban[i][j]=true } }) });
     const isDateRow=D.map(r=>{ let ok=0, n=0; for(let i=0;i<r.length;i++)if(r[i]){ n++; for(let j=i+1;j<r.length;j++)if(r[j]){ if(r[j]-r[i]===j-i)ok++; break } } return n>=2&&ok>=1 });
     // 日付が1つだけの行(月の始まりや終わりの週)は、前後の日が日付の行のいちばん端にあれば、日付の行とみなす
     //   (行の見出しの数字を日付と思わないため、日付の列の左端か右端にあることも見る)
@@ -855,17 +868,18 @@ const OCR=(()=>{
     D.forEach((r,i)=>{ if(!isDateRow[i])return; const cnt=new Map(); r.forEach((v,j)=>{ if(v)cnt.set(v-j,(cnt.get(v-j)||0)+1) });
       let off=null, best=0; cnt.forEach((n,o)=>{ if(n>best){ best=n; off=o } });
       const known=r.map((v,j)=>v&&v-j===off?j:-1).filter(j=>j>=0), lo=Math.min(...known), hi=Math.max(...known);
-      for(let j=c0;j<=c1;j++){ const v=j+off; r[j]=v>=1&&v<=31&&(G[i][j].lines.length||j>=lo&&j<=hi)?v:0 } });
+      for(let j=c0;j<=c1;j++){ const v=j+off; r[j]=!ban[i][j]&&v>=1&&v<=31&&(G[i][j].lines.length||j>=lo&&j<=hi)?v:0 } });
     const band=D.map((r,i)=>{ if(!isDateRow[i])return null; const a=[], b=[];
       r.forEach((v,j)=>{ const c=G[i][j], l=c.lines.find(l=>dateOf(l.t)===v); if(v&&l){ a.push(l.y0-c.y0); b.push(l.y1-c.y0) } });
       if(!a.length)return null; a.sort((p,q)=>p-q); b.sort((p,q)=>p-q); return {a:a[a.length>>1],b:b[b.length>>1]} });
     const inBand=(l,c,bd)=>bd&&Math.min(l.y1,c.y0+bd.b)-Math.max(l.y0,c.y0+bd.a)>(l.y1-l.y0)*.5;
-    for(let j=0;j<nC;j++){ let cur=0, toks=[];
-      const flush=()=>{ if(cur&&!out[cur])out[cur]={a:toks[0]||'',b:toks[1]||''}; cur=0; toks=[] };
+    for(let j=0;j<nC;j++){ let cur=0, toks=[], wd='', colWd='';
+      const flush=()=>{ if(cur&&!out[cur])out[cur]={a:toks[0]||'',b:toks[1]||'',w:wd||colWd}; cur=0; toks=[]; wd='' };
       for(let i=0;i<nR;i++){ const c=G[i][j], d=isDateRow[i]?D[i][j]:0; let ls=c.lines.map(l=>l.t);
         if(d){ flush(); cur=d; const bd=band[i]; ls=c.lines.filter(l=>!(/^[0-9Il|()]{1,5}$/.test(l.t)&&(inBand(l,c,bd)||!bd&&l===c.lines[0]))).map(l=>l.t) }
         else if(isDateRow[i]){ flush(); continue }
-        ls.forEach(t=>{ if(new RegExp(`^[(（]?[${WD}]曜?[)）]?$`).test(t))return; if(cur)toks.push(t) }) }
+        // 曜日:日付の下にあればその日の、日付の行より上(見出し)にあればその列の曜日
+        ls.forEach(t=>{ if(WRE.test(t)){ const x=t.replace(/[()（）曜]/g,''); if(cur){ if(!wd)wd=x } else if(!colWd)colWd=x; return } if(cur)toks.push(t) }) }
       flush() }
     return out }
   return {readGrid};
@@ -873,23 +887,30 @@ const OCR=(()=>{
 const OCR_ON=/[?&]ocr=1(?:&|$)/.test(location.search);
 const OCR_CDN='https://cdn.jsdelivr.net/npm/', OCR_LIB=OCR_CDN+'tesseract.js@6.0.1/dist/tesseract.min.js', OCR_SRI='sha384-r1ru3tcf6FhnCFR4B7pIFG+BhFF9LlFtz/P1y4pblWn3AGs9y3lBx5SKLNf4+rED';
 const OCR_OPT={workerPath:OCR_CDN+'tesseract.js@6.0.1/dist/worker.min.js',corePath:OCR_CDN+'tesseract.js-core@6.1.2',langPath:OCR_CDN+'@tesseract.js-data/jpn@1.0.0/4.0.0_best_int'};
-let ocrW=null, ocrBusy=false;
-const ocrLib=()=>new Promise((ok,ng)=>{ if(window.Tesseract)return ok(); const e=document.createElement('script'); e.src=OCR_LIB; e.integrity=OCR_SRI; e.crossOrigin='anonymous'; e.onload=()=>ok(); e.onerror=()=>ng(new Error('lib')); document.head.appendChild(e) });
-async function ocrWorker(say){ if(ocrW)return ocrW; await ocrLib();
-  ocrW=await Tesseract.createWorker('jpn',1,Object.assign({logger:m=>{ if(/load|initializ/.test(m.status||''))say('load') }},OCR_OPT)); return ocrW }
-/* 画像を、明るさ(0〜255)の並びにする */
+let ocrW=null, ocrP=null, ocrBusy=false, ocrPsm='';
+const ocrLib=()=>new Promise((ok,ng)=>{ if(window.Tesseract)return ok(); const e=document.createElement('script'); e.src=OCR_LIB; e.integrity=OCR_SRI; e.crossOrigin='anonymous'; e.onload=()=>ok(); e.onerror=()=>{ e.remove(); ng(new Error('lib')) }; document.head.appendChild(e) });
+/* 読み取りの道具を用意する。日本語のデータが取れないと tesseract.js は返事をしないことがあるので、エラーの知らせと時間の上限で止める */
+function ocrPrep(){ if(ocrW)return Promise.resolve(ocrW); if(ocrP)return ocrP;
+  ocrP=ocrLib().then(()=>new Promise((ok,ng)=>{ let w=null; const t=setTimeout(()=>ng(new Error('timeout')),180000);
+    Tesseract.createWorker('jpn',1,Object.assign({errorHandler:e=>{ clearTimeout(t); ng(new Error(String(e))) }},OCR_OPT)).then(x=>{ w=x; clearTimeout(t); ok(x) },e=>{ clearTimeout(t); ng(e) }) }))
+    .then(w=>{ ocrW=w; ocrP=null; ocrPsm=''; return w },e=>{ ocrP=null; throw e });
+  return ocrP }
+function ocrDrop(){ try{ ocrW&&ocrW.terminate() }catch(e){} ocrW=null; ocrPsm='' }
+/* 画像を、明るさ(0〜255)の並びにする。大きすぎる写真は縮める(iPhone の canvas の上限より小さく)。暗い画面のスクショは白黒を返す */
 function ocrLum(file){ return new Promise((ok,ng)=>{ const u=URL.createObjectURL(file), im=new Image();
-  im.onload=()=>{ try{ const w=im.naturalWidth, h=im.naturalHeight, cv=document.createElement('canvas'); cv.width=w; cv.height=h; const cx=cv.getContext('2d',{willReadFrequently:true}); cx.drawImage(im,0,0);
-      const d=cx.getImageData(0,0,w,h).data, lum=new Float32Array(w*h); for(let i=0;i<w*h;i++)lum[i]=.299*d[i*4]+.587*d[i*4+1]+.114*d[i*4+2]; URL.revokeObjectURL(u); ok({w,h,lum}) }catch(e){ URL.revokeObjectURL(u); ng(e) } };
+  im.onload=()=>{ try{ const k=Math.min(1,Math.sqrt(8e6/(im.naturalWidth*im.naturalHeight))), w=Math.round(im.naturalWidth*k), h=Math.round(im.naturalHeight*k), cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+      const cx=cv.getContext('2d',{willReadFrequently:true}); cx.drawImage(im,0,0,w,h); const d=cx.getImageData(0,0,w,h).data, n=w*h, lum=new Uint8ClampedArray(n); let sum=0;
+      for(let i=0;i<n;i++){ const v=.299*d[i*4]+.587*d[i*4+1]+.114*d[i*4+2]; lum[i]=v; sum+=v } if(sum<n*128)for(let i=0;i<n;i++)lum[i]=255-lum[i];
+      cv.width=cv.height=0; URL.revokeObjectURL(u); ok({w,h,lum}) }catch(e){ URL.revokeObjectURL(u); ng(e) } };
   im.onerror=()=>{ URL.revokeObjectURL(u); ng(new Error('img')) }; im.src=u }) }
-/* 読める字は、番号・休みの名前・曜日などに絞る(読み違いが減る) */
-const ocrWL=D=>[...new Set('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz公特年休み変形ー()'+WD+'月'+D.kro.map(o=>o.n).join(''))].join('');
+/* 読める字は、番号・休みの名前・曜日・年月に絞る(読み違いが減る) */
+const ocrWL=D=>[...new Set('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz公特年休み変形ー()'+WD+D.kro.map(o=>o.n).join(''))].join('');
 /* 範囲(なければ全体)を読んで、語(位置つき)を返す。小さい範囲は2倍にして読む */
-async function ocrRead(img,rect,psm){ await ocrW.setParameters({tessedit_pageseg_mode:psm,tessedit_char_whitelist:ocrWL(S.D)});
+async function ocrRead(img,rect,psm){ if(psm!==ocrPsm){ await ocrW.setParameters({tessedit_pageseg_mode:psm}); ocrPsm=psm }
   let sx=0, sy=0, sw=img.w, sh=img.h, k=1; if(rect){ sx=rect.left; sy=rect.top; sw=Math.min(rect.width,img.w-sx); sh=Math.min(rect.height,img.h-sy); k=2 }
   const cv=document.createElement('canvas'); cv.width=sw*k; cv.height=sh*k; const cx=cv.getContext('2d'), id=cx.createImageData(cv.width,cv.height);
   for(let y=0;y<cv.height;y++)for(let x=0;x<cv.width;x++){ const v=img.lum[(sy+(y/k|0))*img.w+sx+(x/k|0)], i=(y*cv.width+x)*4; id.data[i]=id.data[i+1]=id.data[i+2]=v; id.data[i+3]=255 }
-  cx.putImageData(id,0,0); const {data}=await ocrW.recognize(cv,{},{blocks:true}), out=[];
+  cx.putImageData(id,0,0); const {data}=await ocrW.recognize(cv,{},{blocks:true}), out=[]; cv.width=cv.height=0;
   (data.blocks||[]).forEach(b=>b.paragraphs.forEach(p=>p.lines.forEach(l=>l.words.forEach(w=>out.push(w))))); return out }
 
 /* ---------- 画面の道具 ---------- */
@@ -1310,19 +1331,29 @@ $('impPaste').onclick=async()=>{ let t=null; try{ if(navigator.clipboard&&naviga
 $('impHand').onclick=()=>{ const b=$('impHandBox'); b.hidden=!b.hidden; if(!b.hidden)$('impText').focus() };
 $('impRead').onclick=()=>doImport($('impText').value);
 /* スクショを読む(試し) */
-const OCR_NOTE=ph('このスマホの中で読むよ。','画像はどこにも送らない。','はじめての1回だけ、','読み取りの道具（約5MB）を','読み込むよ。');
-if(OCR_ON){ $('ocrBox').hidden=false; $('ocrOr').hidden=false; $('ocrMsg').innerHTML=OCR_NOTE; $('impPaste').className='btn sec' }
-$('ocrBtn').onclick=()=>{ if(ocrBusy)return; $('ocrFile').value=''; $('ocrFile').click() };
-$('ocrFile').onchange=async()=>{ const f=$('ocrFile').files[0]; if(!f||ocrBusy||!S.D)return; ocrBusy=true; impErr('');
-  const b=$('ocrBtn'), msg=$('ocrMsg'), t0=performance.now(); b.disabled=true;
-  const say=k=>{ b.textContent=k==='load'?'読み取りの道具を読み込み中…':'読んでるよ…'; msg.innerHTML=k==='load'?ph('はじめての1回だけ、','少し時間がかかるよ。'):ph('表の枠ごとに読んでるよ。','10秒くらいかかることがある。') };
-  try{ if(!ocrW)say('load'); await ocrWorker(say); say('read'); const img=await ocrLum(f), r=await OCR.readGrid(img,ocrRead), ds=r?Object.keys(r.days).map(Number).sort((a,c)=>a-c):[];
-    if(!ds.length){ impErr(ph('表として','読めなかった。','下の「AIで読むとき」を','使ってね。')); return }
-    const txt=(r.ym?[`${r.ym.y}年${r.ym.m}月`]:[]).concat(ds.map(d=>`${d} ${r.days[d].a||'？'}${r.days[d].b?' '+r.days[d].b:''}`)).join('\n');
-    if(doImport(txt))showDone(ph(`スクショから${ds.length}日分を`,`読んだよ（${Math.round((performance.now()-t0)/1000)}秒）。`,'読み違いがないか、','カレンダーで','確かめてね。')) }
-  catch(e){ impErr(ph('読み取りの道具を','読み込めなかった。','電波のいいところで、','もう一度ためしてね。')) }
-  finally{ ocrBusy=false; b.disabled=false; b.textContent='勤務表のスクショを選んで読む'; msg.innerHTML=OCR_NOTE } };
-$('impDone').onclick=()=>{ S.impOpen=true; update() };
+if(OCR_ON){ $('ocrBox').hidden=false; $('ocrOr').hidden=false; $('ocrMsg').innerHTML=ph('この端末の中で読むよ。','画像は外に出さない。')+' '+ph('はじめてだけ、','約3.5MBの道具を','取ってくるよ。'); $('impPaste').className='btn sec' }
+/* 押したらすぐ道具を取りに行く(写真を選んでいるあいだに読み込める) */
+$('ocrBtn').onclick=()=>{ if(ocrBusy)return; ocrPrep().catch(()=>{}); $('ocrFile').value=''; $('ocrFile').click() };
+$('ocrFile').onchange=async()=>{ const f=$('ocrFile').files[0], D=S.D; if(!f||ocrBusy||!D)return;
+  /* 読んでいるあいだは、月を変えたり、ほかの読み込みをしたりできないようにする(終わったときに食い違わないため) */
+  const lock=['ocrBtn','impMonth','impPaste','impRead','dataBtn'], sel=$('impMonth').value||curMon(), L0=[...$('impMonth').options].map(o=>o.value), b=$('ocrBtn'), t0=performance.now();
+  const say=t=>{ b.textContent=t }, done=()=>{ ocrBusy=false; lock.forEach(id=>{ $(id).disabled=false }); say('勤務表のスクショを選んで読む') };
+  ocrBusy=true; impErr(''); hideDone(); lock.forEach(id=>{ $(id).disabled=true }); say(ocrW?'読んでるよ…':'準備してるよ…');
+  let img; try{ img=await ocrLum(f) }catch(e){ console.error(e); impErr(ph('この画像は','開けなかった。','スクショを','選んでね。')); done(); return }
+  try{ await ocrPrep() }catch(e){ console.error(e); ocrDrop(); impErr(ph('読み取りの道具を','取ってこられなかった。','電波のいいところで、','もう一度ためしてね。')); done(); return }
+  try{ say('読んでるよ…'); await ocrW.setParameters({tessedit_char_whitelist:ocrWL(D)});
+    const r=await OCR.readGrid(img,ocrRead); img=null;
+    if(S.D!==D){ done(); return }
+    const ds=r?Object.keys(r.days).map(Number).filter(d=>d>=1&&d<=31):[];
+    if(!ds.length){ impErr(ph('表として','読めなかった。','下の「AIで」を','使ってね。')); done(); return }
+    // 年月:スクショに書いてあればそれ(選べる月の中だけ)。なければ選んでいる月
+    const ym=r.ym&&`${r.ym.y}-${pad(r.ym.m)}`, m=ym&&L0.includes(ym)?ym:sel, [y,mm]=m.split('-').map(Number), dim=new Date(y,mm,0).getDate();
+    // 読めなかった日・どちらかの段が読めなかった日は「？」にして、直してもらう
+    const lines=[`${y}年${mm}月`]; for(let d=1;d<=dim;d++){ const x=r.days[d], w=x&&x.w?`(${x.w})`:'';
+      lines.push(!x||!x.a||x.a==='？'||x.b==='？'?`${d}${w} ？`:`${d}${w} ${x.a}${x.b?' '+x.b:''}`) }
+    done(); $('impMonth').value=m;
+    if(doImport(lines.join('\n')))showDone(ph(`${mm}月の勤務として、`,`${dim}日分を読んだよ`,`（${Math.round((performance.now()-t0)/1000)}秒）。`)+(ym&&ym!==m?ph('スクショの年月が','選べる月になかったので、',`${mm}月に入れたよ。`):!ym?ph('スクショの年月が','読めなかったので、',`選んでいる${mm}月に入れたよ。`):'')+ph('読み違いがないか、','カレンダーで','確かめてね。')) }
+  catch(e){ console.error(e); ocrDrop(); impErr(ph('読んでいるとちゅうで','止まった。','もう一度ためすか、','下の「AIで」を','使ってね。')); done() } };
 /* ぜんぶ戻す(押し間違えないよう、2回押す) */
 let clrT=0;
 $('chClear').onclick=()=>{ const b=$('chClear');
