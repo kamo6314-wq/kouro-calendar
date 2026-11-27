@@ -790,8 +790,8 @@ const OCR=(()=>{
   // 決まった形の語か(番号・休み・明け・曜日など)。読み直すかどうかを決めるため
   const okTok=t=>/^[A-Za-z]?\d{1,5}[a-z]?$|^[ー一\-]$|^[公特年]休$|^休み?$|^変形$|^[A-Z][A-Z]$|^[A-C]予$/.test(String(t).normalize('NFKC'));
   // 1行として読み、読めなければ1語、1字として読み直す(1字だけの数字は、1行では読めないことがある)
-  async function readBox(img,b,read){ const rect={left:Math.max(0,b.x0-6),top:Math.max(0,b.y0-6),width:b.x1-b.x0+13,height:b.y1-b.y0+13};
-    for(const psm of ['7','8','10']){ const t=(await read(img,rect,psm)).map(w=>txt(w.text)).join(''); if(t)return t }
+  async function readBox(img,b,read,k){ const rect={left:Math.max(0,b.x0-6),top:Math.max(0,b.y0-6),width:b.x1-b.x0+13,height:b.y1-b.y0+13};
+    for(const psm of ['7','8','10']){ const t=(await read(img,rect,psm,k)).map(w=>txt(w.text)).join(''); if(t)return t }
     return '' }
   // 字のある所が、横に長く薄い棒か(「ー」)
   function flat(img,b,bg){ let x0=1e9,y0=1e9,x1=-1,y1=-1,n=0; for(let y=b.y0;y<=b.y1;y++)for(let x=b.x0;x<=b.x1;x++)if(ink(img,x,y,bg)){ n++; if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y }
@@ -812,42 +812,96 @@ const OCR=(()=>{
       for(let i=0;i<=colN.length;i++){ const v=i<colN.length?colN[i]:0; if(v){ if(s<0)s=i; gap=0 } else if(s>=0){ gap++; if(gap>h*.8||i===colN.length){ const x0=B.x0+s, x1=B.x0+i-gap; let n=0,y0=1e9,y1=-1; for(let x=x0;x<=x1;x++)for(let y=B.y0;y<=B.y1;y++)if(dark(x,y)){ n++; if(y<y0)y0=y; if(y>y1)y1=y }
         if(n>=4)out.push({x0,x1,y0,y1,n}); s=-1; gap=0 } } } });
     return out.filter(b=>b.y1-b.y0>=2||b.x1-b.x0>=6) }
-  async function readGrid(img0,read0){ const L=findLines(img0); if(!L)return null;
+  // 背景の明るさ(いちばん多い明るさ)
+  const bgOf=img=>{ const h=new Uint32Array(256); for(let i=0;i<img.lum.length;i++)h[img.lum[i]]++; let b=0; for(let i=1;i<256;i++)if(h[i]>h[b])b=i; return b };
+  // 読んだ語をそろえる。範囲を読んだときは k 倍・(dx,dy) ずらした位置を、もとの画像の位置に戻す
+  function prep(img,raw,bg,k,dx,dy){ const ws=raw.map(w=>({t:txt(w.text),x0:Math.floor(w.bbox.x0/k+dx),y0:Math.floor(w.bbox.y0/k+dy),x1:Math.ceil(w.bbox.x1/k+dx),y1:Math.ceil(w.bbox.y1/k+dy)})).filter(w=>w.t&&!/^[|｜\[\]]+$/.test(w.t));
+    const hs=ws.map(w=>w.y1-w.y0).sort((a,b)=>a-b), mh=hs[hs.length>>1]||0;
+    ws.forEach(w=>{ if(mh&&w.y1-w.y0>mh*1.6)tighten(img,w,bg); w.cx=(w.x0+w.x1)/2; w.cy=(w.y0+w.y1)/2 });
+    // 「1」「l」などと読んだ短い語でも、字の形が横に長い棒なら「ー」(1行路と読み違えると、気づかずに入ってしまうため)
+    ws.forEach(w=>{ if(/^[1lI|一ー\-]{1,2}$/.test(w.t)&&flat(img,w,bg))w.t='ー' });
+    return ws }
+  // 1つの枠(c)の中の行を作る:読めた語、残った点の読み直し、決まった形にならない語の読み直し、同じ高さのかけらをつなぐ
+  async function fillCell(img,c,ws1,bg,thin,read){ ws1.sort((p,q)=>p.cy-q.cy);
+    ws1.forEach(w=>{ const l=c.lines.find(l=>Math.abs(l.cy-w.cy)<(w.y1-w.y0)*.6); if(l){ l.ws.push(w); l.y0=Math.min(l.y0,w.y0); l.y1=Math.max(l.y1,w.y1) } else c.lines.push({cy:w.cy,y0:w.y0,y1:w.y1,ws:[w]}) });
+    c.lines.forEach(l=>{ l.ws.sort((p,q)=>p.cx-q.cx); l.t=l.ws.map(w=>w.t).join(''); l.x0=l.ws[0].x0 });
+    // 読めた語の外に残った点のかたまりを、1つずつ読み直す。横に長く薄ければ「ー」
+    for(const b of blobs(img,c,bg,ws1)){ if(b.y1-b.y0+1<=thin&&b.x1-b.x0+1>=(c.x1-c.x0)*.8)continue;
+      const t=flat(img,b,bg)?'ー':await readBox(img,b,read); if(t)c.lines.push({cy:(b.y0+b.y1)/2,y0:b.y0,y1:b.y1,x0:b.x0,t}) }
+    // 決まった形にならない語は、そこだけ大きくして読み直す
+    for(const l of c.lines){ if(!l.ws||okTok(fixTok(l.t)))continue; const b={x0:Math.min(...l.ws.map(w=>w.x0)),y0:Math.min(...l.ws.map(w=>w.y0)),x1:Math.max(...l.ws.map(w=>w.x1)),y1:Math.max(...l.ws.map(w=>w.y1))};
+      const fl=flat(img,b,bg), t=fl?'ー':await readBox(img,b,read); if(t&&okTok(fixTok(t)))l.t=t }
+    // 同じ高さに並んだもの(2つに分かれた字や数字)は、左から1つにつなぐ。ただし日付の数字と字はつながない
+    c.lines.sort((p,q)=>p.y0-q.y0); const M=[];
+    const ov=(m,l)=>Math.min(m.y1,l.y1)-Math.max(m.y0,l.y0)>Math.min(m.y1-m.y0,l.y1-l.y0)*.5;
+    // 語の横に残った点だけから読めた1けたの数字は、その語のかけら(「休」のはしを「1」と読んだなど)
+    c.lines=c.lines.filter(l=>!(!l.ws&&/^[0-9Il|]$/.test(l.t)&&c.lines.some(m=>m!==l&&m.ws&&!/^\d{1,2}$/.test(m.t)&&ov(m,l))));
+    c.lines.forEach(l=>{ const m=M.find(m=>ov(m,l)&&/^\d{1,2}$/.test(m.t)===/^\d{1,2}$/.test(l.t));
+      if(m){ if(l.x0<m.x0){ m.t=l.t+m.t; m.x0=l.x0 } else m.t+=l.t; m.y0=Math.min(m.y0,l.y0); m.y1=Math.max(m.y1,l.y1) } else M.push(Object.assign({},l)) });
+    M.forEach(l=>{ l.t=fixTok(l.t) }); c.lines=M.filter(l=>l.t) }
+  // 表の上にある「何年何月」(「2026年10月」「2026/10」。左が切れた「026/10」も)。ページの方で、選べる月のときだけ使う
+  function ymOf(ws,top){ const m=/(?:^|[^\d])((?:20)?\d{2}|0\d{2})\s*[年\/.\-]\s*(\d{1,2})(?!\d)/.exec(ws.filter(w=>w.y1<top).sort((p,q)=>Math.abs(p.cy-q.cy)>Math.min(p.y1-p.y0,q.y1-q.y0)/2?p.cy-q.cy:p.x0-q.x0).map(w=>w.t).join(' '));
+    return m&&+m[2]>=1&&+m[2]<=12?{y:2000+(+m[1]%100),m:+m[2]}:null }
+  async function readGrid(img0,read0){ let left=150; const read=(i,r,p,k)=>r&&--left<0?Promise.resolve([]):read0(i,r,p,k);
+    const L=findLines(img0); if(!L)return readCols(img0,read,bgOf(img0));
     // 勤務表にしては枠が多すぎるものは、読まない(関係のない表に長い時間をかけないため)
     if((L.H.length-1)*(L.V.length-1)>300||L.H.length>17)return null;
-    const img=eraseLines(img0,L); let left=150; const read=(i,r,p)=>r&&--left<0?Promise.resolve([]):read0(i,r,p);
-    const ws=(await read(img,null,'11')).map(w=>({t:txt(w.text),x0:w.bbox.x0,y0:w.bbox.y0,x1:w.bbox.x1,y1:w.bbox.y1})).filter(w=>w.t&&!/^[|｜\[\]]+$/.test(w.t));
-    const hs=ws.map(w=>w.y1-w.y0).sort((a,b)=>a-b), mh=hs[hs.length>>1]||0;
-    ws.forEach(w=>{ if(mh&&w.y1-w.y0>mh*1.6)tighten(img,w,L.bg); w.cx=(w.x0+w.x1)/2; w.cy=(w.y0+w.y1)/2 });
-    // 「1」「l」などと読んだ短い語でも、字の形が横に長い棒なら「ー」(1行路と読み違えると、気づかずに入ってしまうため)
-    ws.forEach(w=>{ if(/^[1lI|一ー\-]{1,2}$/.test(w.t)&&flat(img,w,L.bg))w.t='ー' });
+    const img=eraseLines(img0,L), ws=prep(img,await read(img,null,'11'),L.bg,1,0,0);
     // 枠を作る(行 × 列)
     const rows=[]; for(let i=1;i<L.H.length;i++)rows.push({y0:L.H[i-1].b+3,y1:L.H[i].a-3});
     const cols=[]; for(let i=1;i<L.V.length;i++)cols.push({x0:L.V[i-1].b+3,x1:L.V[i].a-3});
     const G=rows.map(r=>cols.map(c=>({x0:c.x0,x1:c.x1,y0:r.y0,y1:r.y1,lines:[]})));
     ws.forEach(w=>{ if(L.V.some(g=>w.x0<g.a-3&&w.x1>g.b+3)||L.H.some(g=>w.y0<g.a-3&&w.y1>g.b+3))return;
       for(const R of G)for(const c of R)if(w.cx>=c.x0-2&&w.cx<=c.x1+2&&w.cy>=c.y0-2&&w.cy<=c.y1+2){ (c.ws=c.ws||[]).push(w); return } });
-    for(const R of G)for(const c of R){ if(c.y1-c.y0<4||c.x1-c.x0<4)continue;
-      const ws1=(c.ws||[]).sort((p,q)=>p.cy-q.cy);
-      ws1.forEach(w=>{ const l=c.lines.find(l=>Math.abs(l.cy-w.cy)<(w.y1-w.y0)*.6); if(l){ l.ws.push(w); l.y0=Math.min(l.y0,w.y0); l.y1=Math.max(l.y1,w.y1) } else c.lines.push({cy:w.cy,y0:w.y0,y1:w.y1,ws:[w]}) });
-      c.lines.forEach(l=>{ l.ws.sort((p,q)=>p.cx-q.cx); l.t=l.ws.map(w=>w.t).join(''); l.x0=l.ws[0].x0 });
-      // 読めた語の外に残った点のかたまりを、1つずつ読み直す。横に長く薄ければ「ー」
-      for(const b of blobs(img,c,L.bg,ws1)){ if(b.y1-b.y0+1<=L.thin&&b.x1-b.x0+1>=(c.x1-c.x0)*.8)continue;
-        const t=flat(img,b,L.bg)?'ー':await readBox(img,b,read); if(t)c.lines.push({cy:(b.y0+b.y1)/2,y0:b.y0,y1:b.y1,x0:b.x0,t}) }
-      // 決まった形にならない語は、そこだけ大きくして読み直す
-      for(const l of c.lines){ if(!l.ws||okTok(fixTok(l.t)))continue; const b={x0:Math.min(...l.ws.map(w=>w.x0)),y0:Math.min(...l.ws.map(w=>w.y0)),x1:Math.max(...l.ws.map(w=>w.x1)),y1:Math.max(...l.ws.map(w=>w.y1))};
-        const fl=flat(img,b,L.bg), t=fl?'ー':await readBox(img,b,read); if(t&&okTok(fixTok(t)))l.t=t }
-      // 同じ高さに並んだもの(2つに分かれた字や数字)は、左から1つにつなぐ。ただし日付の数字と字はつながない
-      c.lines.sort((p,q)=>p.y0-q.y0); const M=[];
-      const ov=(m,l)=>Math.min(m.y1,l.y1)-Math.max(m.y0,l.y0)>Math.min(m.y1-m.y0,l.y1-l.y0)*.5;
-      // 語の横に残った点だけから読めた1けたの数字は、その語のかけら(「休」のはしを「1」と読んだなど)
-      c.lines=c.lines.filter(l=>!(!l.ws&&/^[0-9Il|]$/.test(l.t)&&c.lines.some(m=>m!==l&&m.ws&&!/^\d{1,2}$/.test(m.t)&&ov(m,l))));
-      c.lines.forEach(l=>{ const m=M.find(m=>ov(m,l)&&/^\d{1,2}$/.test(m.t)===/^\d{1,2}$/.test(l.t));
-        if(m){ if(l.x0<m.x0){ m.t=l.t+m.t; m.x0=l.x0 } else m.t+=l.t; m.y0=Math.min(m.y0,l.y0); m.y1=Math.max(m.y1,l.y1) } else M.push(Object.assign({},l)) });
-      M.forEach(l=>{ l.t=fixTok(l.t) }); c.lines=M.filter(l=>l.t) }
-    // 表の上にある「何年何月」
-    const ym=/(20\d{2})年(\d{1,2})月/.exec(ws.filter(w=>w.y1<L.H[0].a).sort((p,q)=>Math.abs(p.cy-q.cy)>Math.min(p.y1-p.y0,q.y1-q.y0)/2?p.cy-q.cy:p.x0-q.x0).map(w=>w.t).join(''));
-    return {days:interpret(G),ym:ym&&+ym[2]>=1&&+ym[2]<=12?{y:+ym[1],m:+ym[2]}:null} }
+    for(const R of G)for(const c of R)if(c.y1-c.y0>=4&&c.x1-c.x0>=4)await fillCell(img,c,c.ws||[],L.bg,L.thin,read);
+    return {days:interpret(G),ym:ymOf(ws,L.H[0].a)} }
+  // 表の線がない画面(枠が1つずつ離れている画面など):日付の並びから列を決めて、日付の下を列ごとに読む
+  async function readCols(img0,read,bg){ const {w:W,h:Hh}=img0, thin=Math.max(6,Math.round(Math.min(W,Hh)*.012));
+    const ws=prep(img0,await read(img0,null,'11'),bg,1,0,0);
+    // 日付の行:同じ高さに、左から 1 ずつ増える日付(「01」も)が5つ以上
+    const dts=ws.filter(w=>{ const m=/^0?(\d{1,2})日?$/.exec(w.t); if(!m)return false; w.d=+m[1]; return w.d>=1&&w.d<=31 }).sort((a,b)=>a.cy-b.cy), rows=[];
+    dts.forEach(c=>{ const r=rows.find(r=>Math.abs(r.cy-c.cy)<r.h*.6); if(r)r.a.push(c); else rows.push({cy:c.cy,h:c.y1-c.y0,a:[c]}) });
+    const R=rows.map(r=>{ const a=[]; r.a.sort((p,q)=>p.cx-q.cx).forEach(c=>{ if(!a.length||c.d>a[a.length-1].d)a.push(c) }); let ok=0; for(let i=1;i<a.length;i++)if(a[i].d===a[i-1].d+1)ok++; return {a,ok} })
+      .filter(r=>r.a.length>=5&&r.ok>=(r.a.length-1)*.6).map(r=>{ const a=r.a, g=[]; for(let i=1;i<a.length;i++)g.push((a[i].cx-a[i-1].cx)/(a[i].d-a[i-1].d)); g.sort((p,q)=>p-q);
+        const hs=a.map(c=>c.y1-c.y0).sort((p,q)=>p-q); return {a,gap:g[g.length>>1],dh:hs[hs.length>>1],top:Math.min(...a.map(c=>c.y0)),bot:Math.max(...a.map(c=>c.y1))} }).sort((p,q)=>p.top-q.top);
+    if(!R.length)return null;
+    const out={}, cells={};
+    for(let ri=0;ri<R.length;ri++){ const r=R[ri], a=r.a, cx={};
+      // 列の中心:読めた日はその位置、読めなかった日は前後から割り出す
+      a.forEach(c=>{ cx[c.d]=c.cx }); const d0=a[0].d, d1=a[a.length-1].d;
+      for(let d=d0+1;d<d1;d++)if(cx[d]==null){ const p=a.filter(c=>c.d<d).pop(), n=a.find(c=>c.d>d); cx[d]=p.cx+(n.cx-p.cx)*(d-p.d)/(n.d-p.d) }
+      for(let d=d0-1;d>=1&&d>=d0-3;d--){ const x=cx[d0]-r.gap*(d0-d); if(x-r.gap/2>=0)cx[d]=x }
+      for(let d=d1+1;d<=31&&d<=d1+3;d++){ const x=cx[d1]+r.gap*(d-d1); if(x+r.gap/2<=W)cx[d]=x }
+      // 日付のすぐ下の曜日。読む範囲は曜日の下から、次の日付の行(なければ下の方)まで
+      const wdOf={}; let y0=r.bot;
+      ws.forEach(w=>{ if(w.y0<r.bot-r.dh*.3||w.y0>r.bot+r.dh*2.5)return; const x=w.t.replace(/[()（）]/g,''); if(!/^[日月火水木金土]?$/.test(x))return;
+        for(const d in cx)if(Math.abs(w.cx-cx[d])<r.gap/2){ if(x&&!wdOf[d])wdOf[d]=x; y0=Math.max(y0,w.y1); break } });
+      y0+=2; const nx=R[ri+1], y1=Math.min(nx?nx.top-2:Hh-1,y0+r.dh*12,Hh-1);
+      const xs=Object.values(cx), bx0=Math.max(0,Math.floor(Math.min(...xs)-r.gap/2)), bx1=Math.min(W-1,Math.ceil(Math.max(...xs)+r.gap/2));
+      if(y1-y0<r.dh)continue;
+      // 枠の線(色のついた枠・区切りの太い線も)を消してから、2倍にして読む
+      const img={w:W,h:Hh,lum:img0.lum.slice()}, dk=(x,y)=>img.lum[y*W+x]<bg-25;
+      for(let y=y0;y<=y1;y++){ let s=-1; for(let x=bx0;x<=bx1+1;x++){ if(x<=bx1&&dk(x,y)){ if(s<0)s=x } else if(s>=0){ if(x-s>=r.gap*.6)img.lum.fill(bg,y*W+s,y*W+x); s=-1 } } }
+      for(let x=bx0;x<=bx1;x++){ let s=-1; for(let y=y0;y<=y1+1;y++){ if(y<=y1&&dk(x,y)){ if(s<0)s=y } else if(s>=0){ if(y-s>=r.dh*2.2)for(let k=s;k<y;k++)img.lum[k*W+x]=bg; s=-1 } } }
+      const ws2=prep(img,await read(img,{left:bx0,top:y0,width:bx1-bx0+1,height:y1-y0+1},'11'),bg,2,bx0,y0);
+      for(const k of Object.keys(cx)){ const d=+k; if(out[d])continue; const c={x0:Math.round(cx[d]-r.gap/2)+1,x1:Math.round(cx[d]+r.gap/2)-1,y0,y1,lines:[]};
+        // 2つ以上の列にまたがって読んだ語は使わない(列ごとに読み直す)
+        await fillCell(img,c,ws2.filter(w=>w.x0>=c.x0-2&&w.x1<=c.x1+2),bg,thin,read); cells[d]=c;
+        const toks=c.lines.map(l=>l.t).filter(t=>!WRE.test(t));
+        out[d]={a:toks[0]||'',b:toks[1]||'',w:wdOf[d]||''} } }
+    // 番号は、線を消す前の画像で、その語のまわりだけをもう一度大きくして読む。
+    //   いつものけた数の、ちがう番号に読めたら「？」(線と重なった字が消えて、別の番号のまま入らないように)
+    const k0=codeWidth(out);
+    for(const d in cells)for(const l of cells[d].lines){ if(!CODE.test(l.t))continue; const c=cells[d], b=l.ws?{x0:Math.min(...l.ws.map(w=>w.x0)),x1:Math.max(...l.ws.map(w=>w.x1))}:c;
+      const t2=fixTok(await readBox(img0,{x0:Math.max(c.x0,b.x0-3),x1:Math.min(c.x1,b.x1+3),y0:l.y0-2,y1:l.y1+2},read,3));
+      if(CODE.test(t2)&&(!k0||width(t2)===k0)&&digits(t2)!==digits(l.t))['a','b'].forEach(f=>{ if(out[d][f]===l.t)out[d][f]='？' }) }
+    return {days:sameWidth(out,k0),ym:ymOf(ws,R[0].top)} }
+  // 1つの画面の番号は、けた数がそろっているはず。ほとんどが同じけた数なら、ちがうものは読み落とし・読み足しとして「？」
+  const CODE=/^[A-Za-z]{0,2}\d{3,6}[a-z]?$/, digits=t=>{ const m=/(\d+)/.exec(t||''); return m?m[1].replace(/^0+/,''):'' }, width=t=>(/\d+/.exec(t)||[''])[0].length;
+  // 番号のけた数で、半分より多いもの(番号が少ないときは 0)
+  function codeWidth(out){ const n=new Map(); let all=0; Object.values(out).forEach(x=>[x.a,x.b].forEach(t=>{ if(CODE.test(t)){ n.set(width(t),(n.get(width(t))||0)+1); all++ } }));
+    let top=0, k0=0; n.forEach((v,k)=>{ if(v>top){ top=v; k0=k } }); return all>=4&&top>all*.5?k0:0 }
+  function sameWidth(out,k0){ if(k0)Object.values(out).forEach(x=>['a','b'].forEach(f=>{ if(CODE.test(x[f])&&width(x[f])!==k0)x[f]='？' })); return out }
   // 枠の並びから、日ごとの1段目・2段目にする
   function interpret(G){ const nR=G.length, nC=G[0].length, out={};
     const dateOf=t=>{ const m=/^(\d{1,2})(?:日)?$/.exec(t||''); return m&&+m[1]>=1&&+m[1]<=31?+m[1]:0 };
@@ -904,10 +958,10 @@ function ocrLum(file){ return new Promise((ok,ng)=>{ const u=URL.createObjectURL
       cv.width=cv.height=0; URL.revokeObjectURL(u); ok({w,h,lum}) }catch(e){ URL.revokeObjectURL(u); ng(e) } };
   im.onerror=()=>{ URL.revokeObjectURL(u); ng(new Error('img')) }; im.src=u }) }
 /* 読める字は、番号・休みの名前・曜日・年月に絞る(読み違いが減る) */
-const ocrWL=D=>[...new Set('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz公特年休み変形ー()'+WD+D.kro.map(o=>o.n).join(''))].join('');
-/* 範囲(なければ全体)を読んで、語(位置つき)を返す。小さい範囲は2倍にして読む */
-async function ocrRead(img,rect,psm){ if(psm!==ocrPsm){ await ocrW.setParameters({tessedit_pageseg_mode:psm}); ocrPsm=psm }
-  let sx=0, sy=0, sw=img.w, sh=img.h, k=1; if(rect){ sx=rect.left; sy=rect.top; sw=Math.min(rect.width,img.w-sx); sh=Math.min(rect.height,img.h-sy); k=2 }
+const ocrWL=D=>[...new Set('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz公特年休み変形ー()/'+WD+D.kro.map(o=>o.n).join(''))].join('');
+/* 範囲(なければ全体)を読んで、語(位置つき)を返す。範囲は k 倍(なければ2倍)にして読む */
+async function ocrRead(img,rect,psm,kk){ if(psm!==ocrPsm){ await ocrW.setParameters({tessedit_pageseg_mode:psm}); ocrPsm=psm }
+  let sx=0, sy=0, sw=img.w, sh=img.h, k=1; if(rect){ sx=rect.left; sy=rect.top; sw=Math.min(rect.width,img.w-sx); sh=Math.min(rect.height,img.h-sy); k=kk||2 }
   const cv=document.createElement('canvas'); cv.width=sw*k; cv.height=sh*k; const cx=cv.getContext('2d'), id=cx.createImageData(cv.width,cv.height);
   for(let y=0;y<cv.height;y++)for(let x=0;x<cv.width;x++){ const v=img.lum[(sy+(y/k|0))*img.w+sx+(x/k|0)], i=(y*cv.width+x)*4; id.data[i]=id.data[i+1]=id.data[i+2]=v; id.data[i+3]=255 }
   cx.putImageData(id,0,0); const {data}=await ocrW.recognize(cv,{},{blocks:true}), out=[]; cv.width=cv.height=0;
